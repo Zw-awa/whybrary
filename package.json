@@ -1,0 +1,28 @@
+{
+  "name": "whybrary",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A local-first personal why manager with a neuron-style graph and lightweight To-Do lists.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:icon": "tauri icon assets/whybrary-mark.svg"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@xyflow/react": "^12",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react-swc": "^3",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
