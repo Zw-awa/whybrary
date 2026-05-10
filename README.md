@@ -12,123 +12,53 @@
 
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-c97838?style=flat-square" />
-  <img alt="Status" src="https://img.shields.io/badge/Status-Work%20in%20Progress-b38b2a?style=flat-square" />
-  <img alt="Desktop" src="https://img.shields.io/badge/Desktop-Tauri%20v2-1f8f88?style=flat-square" />
-  <img alt="Rust" src="https://img.shields.io/badge/Rust-Backend-2c2018?style=flat-square" />
-  <img alt="React" src="https://img.shields.io/badge/React-Frontend-4d9ecf?style=flat-square" />
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-UI%20Logic-356fa8?style=flat-square" />
-  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-Local%20Storage-4f7d95?style=flat-square" />
-  <img alt="Mode" src="https://img.shields.io/badge/Mode-Local--First-5b8f5a?style=flat-square" />
+  <img alt="Desktop" src="https://img.shields.io/badge/Desktop-Tauri%20v2-4767d8?style=flat-square" />
+  <img alt="Local First" src="https://img.shields.io/badge/Mode-Local--First-7c5cff?style=flat-square" />
+  <img alt="Offline" src="https://img.shields.io/badge/Network-Offline%20Only-a94f67?style=flat-square" />
+  <img alt="Storage" src="https://img.shields.io/badge/Storage-SQLite-4767d8?style=flat-square" />
 </p>
 
 <p align="center">
-  A local-first desktop app for mapping your personal "why" and keeping it actionable through a visual neuron graph and lightweight To-Do lists.
+  A personal desktop app for keeping your own "why" visible through a simple mind map and a lightweight To-Do list.
 </p>
 
-## What Whybrary Is
+## Overview
 
-Whybrary is a personal desktop application built around two linked workflows:
+Whybrary is built for one person, on one machine, with one goal: keep your reasons clear enough to act on.
 
-- turning motivations, reasons, and directions into a visual graph
-- keeping those reasons concrete through short, checkable To-Do items
+Instead of mixing long notes, bookmarks, and task clutter, Whybrary keeps things narrow:
 
-The project is intentionally narrow in scope. It is not a long-form note system, not a collaboration tool, and not a cloud service.
+- a visual mind map for connecting motivations, reasons, and directions
+- a compact To-Do list for turning those reasons into small, checkable actions
 
-## Who It Is For
+## What You Can Do
 
-Whybrary is meant for people who want a private place to think with structure:
-
-- people who organize life decisions through short reasons instead of long journals
-- people who want a graph they can shape manually, not an auto-generated knowledge map
-- people who prefer local ownership of their personal data
-
-## Core Principles
-
-- Local-first: your data stays on your machine
-- Lightweight: short reasons and single-line tasks instead of heavy note-taking
-- Visual: ideas can be named, moved, and connected directly
-- Extensible: the storage model is designed so the renderer can evolve later, including toward richer 3D graph experiences
-
-## Current Features
-
-- Multiple independent Spaces
-- Light and dark themes
-- Local SQLite persistence
-- Create, rename, drag, and connect neuron nodes
-- Single-line To-Do items with completion states
-- Animated strike-through feedback for completed items
-- Draggable floating actions in the To-Do panel:
-  - back to top
-  - jump to the first open item
-  - jump to the next open item
+- Create multiple independent spaces
+- Build a local mind map by adding and connecting points
+- Keep short single-line To-Do items beside the map
+- Switch between light and dark themes
+- Work entirely offline
 
 ## Privacy
 
-- No account system
-- No required network service
-- No upload logic
-- No cloud sync in the current version
+- No account
+- No sync
+- No upload
+- No required network connection
+- Your data stays on your device
 
-## Tech Stack
+## Current Status
 
-- Desktop shell: `Tauri v2`
-- Backend: `Rust`
-- Frontend: `React + TypeScript + Vite`
-- Local storage: `SQLite`
-- Graph canvas: `React Flow`
+Whybrary is in active early development. The desktop app is already usable, and the interface is being refined step by step.
 
-## Getting Started
+## Run From Source
 
-### Requirements
-
-- Rust stable toolchain
-- Node.js 20+
-- npm
-- Visual Studio C++ Build Tools
-- WebView2 Runtime
-
-### Install dependencies
+If you want to try the project locally:
 
 ```bash
 npm install
-```
-
-### Generate app icons
-
-```bash
-npm run tauri:icon
-```
-
-### Run in development
-
-```bash
 npm run tauri dev
 ```
-
-## How Data Is Stored
-
-Whybrary stores application data locally in SQLite through the Tauri backend.  
-For frontend-only preview outside Tauri, the UI falls back to browser local storage for development convenience.
-
-## Project Structure
-
-```text
-whybrary/
-├─ assets/              # README assets and icon source
-├─ src/                 # React frontend
-├─ src-tauri/           # Tauri + Rust + SQLite
-├─ private-docs/        # private work notes, ignored by git
-├─ README.md
-├─ README_CN.md
-└─ LICENSE
-```
-
-## Roadmap
-
-1. Finish the first fully usable version of the graph and To-Do workflows
-2. Harden the SQLite schema and migration strategy
-3. Improve drag behavior, motion polish, and keyboard support
-4. Prepare the rendering layer for future immersive 3D graph exploration
 
 ## License
 

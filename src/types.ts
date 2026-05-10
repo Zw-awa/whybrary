@@ -11,6 +11,9 @@ export type ViewportState = {
 export type BrainNodeData = {
   label: string;
   onLabelChange?: (id: string, nextLabel: string) => void;
+  onStartRename?: (id: string) => void;
+  onFinishRename?: () => void;
+  isEditing?: boolean;
 };
 
 export type BrainNode = Node<BrainNodeData>;

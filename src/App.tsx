@@ -1,19 +1,102 @@
 import { startTransition, useEffect, useState } from 'react';
-import {
-  addEdge,
-  applyEdgeChanges,
-  applyNodeChanges,
-  type Connection,
-  type EdgeChange,
-  type NodeChange,
-  type Viewport,
-} from '@xyflow/react';
 import { BrainCanvas } from './components/BrainCanvas';
 import { SpaceSidebar } from './components/SpaceSidebar';
 import { WhyTodoPanel } from './components/WhyTodoPanel';
-import { buildDefaultState, createSpace, normalizeSnapshot, nowIso } from './lib/defaults';
+import {
+  buildDefaultState,
+  createNeuronNode,
+  createSpace,
+  normalizeSnapshot,
+  nowIso,
+} from './lib/defaults';
 import { loadSnapshot, saveSnapshot } from './lib/persistence';
 import type { AppSnapshot, BrainEdge, BrainNode, Space } from './types';
+
+function applyElasticNodeMotion(
+  space: Space,
+  nodeId: string,
+  nextPosition: BrainNode['position'],
+): BrainNode[] {
+  const currentNode = space.nodes.find((node) => node.id === nodeId);
+  if (!currentNode) {
+    return space.nodes;
+  }
+
+  const dx = nextPosition.x - currentNode.position.x;
+  const dy = nextPosition.y - currentNode.position.y;
+  const nextNodes = space.nodes.map((node) =>
+    node.id === nodeId
+      ? {
+          ...node,
+          position: nextPosition,
+        }
+      : node,
+  );
+
+  if ((Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) || space.edges.length === 0) {
+    return nextNodes;
+  }
+
+  const movedByDrag = new Map<string, { dx: number; dy: number }>([[nodeId, { dx, dy }]]);
+
+  const adjacency = new Map<string, string[]>();
+  for (const edge of space.edges) {
+    adjacency.set(edge.source, [...(adjacency.get(edge.source) ?? []), edge.target]);
+    adjacency.set(edge.target, [...(adjacency.get(edge.target) ?? []), edge.source]);
+  }
+
+  const pullByNode = new Map<string, { dx: number; dy: number }>();
+  const draggedIds = new Set([nodeId]);
+
+  for (const [startId, delta] of movedByDrag) {
+    const queue: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
+    const visited = new Set([startId]);
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
+
+      if (current.depth >= 3) {
+        continue;
+      }
+
+      for (const neighborId of adjacency.get(current.id) ?? []) {
+        if (visited.has(neighborId) || draggedIds.has(neighborId)) {
+          continue;
+        }
+
+        visited.add(neighborId);
+
+        const strength = current.depth === 0 ? 0.34 : current.depth === 1 ? 0.16 : 0.08;
+        const previousPull = pullByNode.get(neighborId) ?? { dx: 0, dy: 0 };
+
+        pullByNode.set(neighborId, {
+          dx: previousPull.dx + delta.dx * strength,
+          dy: previousPull.dy + delta.dy * strength,
+        });
+
+        queue.push({ id: neighborId, depth: current.depth + 1 });
+      }
+    }
+  }
+
+  return nextNodes.map((node) => {
+    const pull = pullByNode.get(node.id);
+    if (!pull) {
+      return node;
+    }
+
+    return {
+      ...node,
+      position: {
+        x: node.position.x + pull.dx,
+        y: node.position.y + pull.dy,
+      },
+    };
+  });
+}
 
 function saveStatusLabel(status: 'booting' | 'saving' | 'saved' | 'error'): string {
   switch (status) {
@@ -34,9 +117,22 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(() => buildDefaultState());
   const [hydrated, setHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'booting' | 'saving' | 'saved' | 'error'>('booting');
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [isMapEditing, setIsMapEditing] = useState(false);
 
   const activeSpace =
     snapshot.spaces.find((space) => space.id === snapshot.activeSpaceId) ?? snapshot.spaces[0];
+
+  useEffect(() => {
+    if (!editingNodeId || !activeSpace) {
+      return;
+    }
+
+    const stillExists = activeSpace.nodes.some((node) => node.id === editingNodeId);
+    if (!stillExists) {
+      setEditingNodeId(null);
+    }
+  }, [activeSpace, editingNodeId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,6 +219,8 @@ export default function App() {
   };
 
   const handleSelectSpace = (spaceId: string) => {
+    setIsMapEditing(false);
+    setEditingNodeId(null);
     updateSnapshot((current) => ({
       ...current,
       activeSpaceId: spaceId,
@@ -130,6 +228,8 @@ export default function App() {
   };
 
   const handleCreateSpace = () => {
+    setIsMapEditing(false);
+    setEditingNodeId(null);
     updateSnapshot((current) => {
       const nextSpace = createSpace(`Space ${current.spaces.length + 1}`);
 
@@ -158,6 +258,8 @@ export default function App() {
       return;
     }
 
+    setEditingNodeId(null);
+    setIsMapEditing(false);
     updateSnapshot((current) => {
       const remaining = current.spaces.filter((space) => space.id !== current.activeSpaceId);
       if (remaining.length === 0) {
@@ -178,51 +280,73 @@ export default function App() {
     });
   };
 
-  const handleNodesChange = (changes: NodeChange<BrainNode>[]) => {
+  const handleMoveNode = (nodeId: string, nextPosition: BrainNode['position']) => {
     updateActiveSpace((space) => ({
       ...space,
-      nodes: applyNodeChanges(changes, space.nodes),
+      nodes: applyElasticNodeMotion(space, nodeId, nextPosition),
     }));
   };
 
-  const handleEdgesChange = (changes: EdgeChange<BrainEdge>[]) => {
+  const handlePanViewport = (x: number, y: number) => {
     updateActiveSpace((space) => ({
       ...space,
-      edges: applyEdgeChanges(changes, space.edges),
+      viewport: {
+        ...space.viewport,
+        x,
+        y,
+      },
     }));
   };
 
-  const handleConnect = (connection: Connection) => {
+  const handleViewportChange = (viewport: Space['viewport']) => {
     updateActiveSpace((space) => ({
       ...space,
-      edges: addEdge(
-        {
-          ...connection,
-          id: crypto.randomUUID(),
-          type: 'smoothstep',
-        },
-        space.edges,
-      ),
+      viewport,
+    }));
+  };
+
+  const handleToggleConnection = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) {
+      return;
+    }
+
+    updateActiveSpace((space) => ({
+      ...space,
+      edges: (() => {
+        const existing = space.edges.find(
+          (edge) =>
+            (edge.source === sourceId && edge.target === targetId) ||
+            (edge.source === targetId && edge.target === sourceId),
+        );
+
+        if (existing) {
+          return space.edges.filter((edge) => edge.id !== existing.id);
+        }
+
+        return [
+          ...space.edges,
+          {
+            id: crypto.randomUUID(),
+            source: sourceId,
+            target: targetId,
+            type: 'default',
+          },
+        ];
+      })(),
     }));
   };
 
   const handleAddNeuron = () => {
-    updateActiveSpace((space) => {
-      const index = space.nodes.length;
-      const column = index % 3;
-      const row = Math.floor(index / 3);
-      const nextNode: BrainNode = {
-        id: crypto.randomUUID(),
-        type: 'neuron',
-        position: {
-          x: column * 220 - 220,
-          y: row * 160 - 60,
-        },
-        data: {
-          label: `Neuron ${index + 1}`,
-        },
-      };
+    const index = activeSpace.nodes.length;
+    const column = index % 3;
+    const row = Math.floor(index / 3);
+    const centerX = (360 - activeSpace.viewport.x) / activeSpace.viewport.zoom;
+    const centerY = (240 - activeSpace.viewport.y) / activeSpace.viewport.zoom;
+    const nextNode = createNeuronNode('', centerX + column * 120 - 120, centerY + row * 96 - 48);
+    setIsMapEditing(true);
+    setEditingNodeId(nextNode.id);
 
+    updateActiveSpace((space) => {
       return {
         ...space,
         nodes: [...space.nodes, nextNode],
@@ -247,22 +371,18 @@ export default function App() {
     }));
   };
 
-  const handleViewportChange = (viewport: Viewport) => {
-    updateActiveSpace((space) => ({
-      ...space,
-      viewport: {
-        x: viewport.x,
-        y: viewport.y,
-        zoom: viewport.zoom,
-      },
-    }));
+  const handleStartRenameNode = (nodeId: string) => {
+    setEditingNodeId(nodeId);
+  };
+
+  const handleFinishRenameNode = () => {
+    setEditingNodeId(null);
   };
 
   const handleAddTodo = (text: string) => {
     updateActiveSpace((space) => ({
       ...space,
       todos: [
-        ...space.todos,
         {
           id: crypto.randomUUID(),
           text,
@@ -270,6 +390,7 @@ export default function App() {
           createdAt: nowIso(),
           updatedAt: nowIso(),
         },
+        ...space.todos,
       ],
     }));
   };
@@ -343,43 +464,35 @@ export default function App() {
       <main className="workspace">
         <header className="workspace__header">
           <div>
-            <p className="eyebrow">Current space</p>
             <h2>{activeSpace.name || 'Untitled Space'}</h2>
-          </div>
-
-          <div className="workspace__summary">
-            <div className="summary-card">
-              <strong>{activeSpace.nodes.length}</strong>
-              <span>neurons</span>
-            </div>
-            <div className="summary-card">
-              <strong>{activeSpace.edges.length}</strong>
-              <span>links</span>
-            </div>
-            <div className="summary-card">
-              <strong>{openTodos}</strong>
-              <span>open todos</span>
-            </div>
           </div>
         </header>
 
         <div className="workspace__grid">
-          <BrainCanvas
-            onAddNeuron={handleAddNeuron}
-            onConnect={handleConnect}
-            onEdgesChange={handleEdgesChange}
-            onNodeLabelChange={handleNodeLabelChange}
-            onNodesChange={handleNodesChange}
-            onViewportChange={handleViewportChange}
-            space={activeSpace}
-          />
-
           <WhyTodoPanel
             onAddTodo={handleAddTodo}
             onChangeTodoText={handleChangeTodoText}
             onDeleteTodo={handleDeleteTodo}
             onToggleTodo={handleToggleTodo}
             space={activeSpace}
+          />
+
+          <BrainCanvas
+            editingNodeId={editingNodeId}
+            isEditMode={isMapEditing}
+            onAddNeuron={handleAddNeuron}
+            onFinishRenameNode={handleFinishRenameNode}
+            onMoveNode={handleMoveNode}
+            onNodeLabelChange={handleNodeLabelChange}
+            onPanViewport={handlePanViewport}
+            onStartRenameNode={handleStartRenameNode}
+            onToggleEditMode={() => {
+              setEditingNodeId(null);
+              setIsMapEditing((current) => !current);
+            }}
+            onViewportChange={handleViewportChange}
+            space={activeSpace}
+            onToggleConnection={handleToggleConnection}
           />
         </div>
       </main>

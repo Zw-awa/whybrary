@@ -22,6 +22,16 @@ export function WhyTodoPanel({
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const openTodos = useMemo(() => space.todos.filter((todo) => !todo.completed), [space.todos]);
 
+  const submitDraft = () => {
+    const nextText = draft.trim();
+
+    onAddTodo(nextText);
+    setDraft('');
+    requestAnimationFrame(() => {
+      listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  };
+
   const scrollToTop = () => {
     listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -62,36 +72,13 @@ export function WhyTodoPanel({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const nextText = draft.trim();
-    if (!nextText) {
-      return;
-    }
-
-    onAddTodo(nextText);
-    setDraft('');
+    submitDraft();
   };
 
   return (
     <section className="panel panel--todo">
       <div className="panel__header">
-        <div>
-          <p className="eyebrow">Short and checkable</p>
-          <h2>Why List</h2>
-          <p className="panel__description">
-            No long notes. Keep each line direct enough to act on or question later.
-          </p>
-        </div>
-
-        <div className="panel__actions">
-          <div className="stat-chip">
-            <strong>{openTodos.length}</strong>
-            <span>open</span>
-          </div>
-          <div className="stat-chip">
-            <strong>{space.todos.length - openTodos.length}</strong>
-            <span>done</span>
-          </div>
-        </div>
+        <h2>To-Do</h2>
       </div>
 
       <form className="todo-composer" onSubmit={handleSubmit}>
@@ -99,11 +86,17 @@ export function WhyTodoPanel({
           className="todo-composer__input"
           maxLength={160}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Add one short why or action..."
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              submitDraft();
+            }
+          }}
+          placeholder="Add one short task..."
           type="text"
           value={draft}
         />
-        <button className="button button--accent" type="submit">
+        <button className="button button--accent" onClick={submitDraft} type="button">
           Add
         </button>
       </form>
@@ -132,6 +125,7 @@ export function WhyTodoPanel({
                   className="todo-body__input"
                   maxLength={160}
                   onChange={(event) => onChangeTodoText(todo.id, event.target.value)}
+                  placeholder="Empty task"
                   type="text"
                   value={todo.text}
                 />

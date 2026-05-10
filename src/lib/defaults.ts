@@ -26,7 +26,7 @@ function defaultViewport(): ViewportState {
   return { x: 0, y: 0, zoom: 0.9 };
 }
 
-function createNode(label: string, x: number, y: number): BrainNode {
+export function createNeuronNode(label: string, x: number, y: number): BrainNode {
   return {
     id: crypto.randomUUID(),
     type: 'neuron',
@@ -58,8 +58,8 @@ function createTodo(text: string): Space['todos'][number] {
 
 export function createSpace(name: string): Space {
   const stamp = nowIso();
-  const root = createNode('Why', -180, -40);
-  const branch = createNode('Because', 180, 110);
+  const root = createNeuronNode('Why', 220, 180);
+  const branch = createNeuronNode('Because', 420, 240);
 
   return {
     id: crypto.randomUUID(),
@@ -89,14 +89,27 @@ export function buildDefaultState(): AppSnapshot {
 }
 
 function normalizeSpace(space: Space): Space {
+  const rawNodes = (space.nodes ?? []).map((node) => ({
+    ...node,
+    type: node.type ?? 'neuron',
+    data: {
+      label: node.data?.label?.trim() || 'Untitled',
+    },
+  }));
+
+  const minX = rawNodes.length > 0 ? Math.min(...rawNodes.map((node) => node.position.x)) : 0;
+  const minY = rawNodes.length > 0 ? Math.min(...rawNodes.map((node) => node.position.y)) : 0;
+  const offsetX = minX < 80 ? 120 - minX : 0;
+  const offsetY = minY < 80 ? 120 - minY : 0;
+
   return {
     ...space,
     name: space.name?.trim() || 'Untitled Space',
-    nodes: (space.nodes ?? []).map((node) => ({
+    nodes: rawNodes.map((node) => ({
       ...node,
-      type: node.type ?? 'neuron',
-      data: {
-        label: node.data?.label?.trim() || 'Untitled neuron',
+      position: {
+        x: node.position.x + offsetX,
+        y: node.position.y + offsetY,
       },
     })),
     edges: (space.edges ?? []).map((edge) => ({

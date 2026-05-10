@@ -28,16 +28,9 @@ export function SpaceSidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
-        <div className="brand-mark">W</div>
         <div>
-          <p className="eyebrow">Local-first desktop</p>
           <h1>Whybrary</h1>
         </div>
-      </div>
-
-      <div className="sidebar__status">
-        <span className="status-pill">No network</span>
-        <span className="status-pill">{saveLabel}</span>
       </div>
 
       <div className="sidebar__controls">
@@ -51,7 +44,7 @@ export function SpaceSidebar({
 
       <section className="sidebar__section">
         <div className="section-heading">
-          <p className="eyebrow">Independent spaces</p>
+          <strong>Spaces</strong>
           <span>{spaces.length}</span>
         </div>
 
@@ -68,7 +61,7 @@ export function SpaceSidebar({
               >
                 <strong>{space.name}</strong>
                 <span>
-                  {space.nodes.length} neurons · {openCount} open
+                  {space.nodes.length} points · {openCount} open
                 </span>
               </button>
             );
@@ -78,7 +71,7 @@ export function SpaceSidebar({
 
       <section className="sidebar__section sidebar__section--editor">
         <div className="section-heading">
-          <p className="eyebrow">Current space</p>
+          <strong>Current</strong>
           <button className="link-button" onClick={onDeleteActiveSpace} type="button">
             Delete
           </button>
@@ -94,11 +87,6 @@ export function SpaceSidebar({
             value={activeSpaceName}
           />
         </label>
-
-        <p className="sidebar__note">
-          Each space keeps its own graph, list, and viewport. This makes room for a later 3D renderer
-          without changing the storage model.
-        </p>
       </section>
     </aside>
   );
