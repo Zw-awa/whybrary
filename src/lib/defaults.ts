@@ -26,6 +26,32 @@ function defaultViewport(): ViewportState {
   return { x: 0, y: 0, zoom: 0.9 };
 }
 
+function normalizeViewport(viewport: ViewportState | null | undefined): ViewportState {
+  if (!viewport) {
+    return defaultViewport();
+  }
+
+  const finite =
+    Number.isFinite(viewport.x) &&
+    Number.isFinite(viewport.y) &&
+    Number.isFinite(viewport.zoom);
+
+  if (!finite) {
+    return defaultViewport();
+  }
+
+  if (
+    Math.abs(viewport.x) > 50000 ||
+    Math.abs(viewport.y) > 50000 ||
+    viewport.zoom < 0.1 ||
+    viewport.zoom > 10
+  ) {
+    return defaultViewport();
+  }
+
+  return viewport;
+}
+
 export function createNeuronNode(label: string, x: number, y: number): BrainNode {
   return {
     id: crypto.randomUUID(),
@@ -120,7 +146,7 @@ function normalizeSpace(space: Space): Space {
       ...todo,
       text: todo.text ?? '',
     })),
-    viewport: space.viewport ?? defaultViewport(),
+    viewport: normalizeViewport(space.viewport),
     createdAt: space.createdAt || nowIso(),
     updatedAt: space.updatedAt || nowIso(),
   };

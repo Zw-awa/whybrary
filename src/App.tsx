@@ -10,93 +10,7 @@ import {
   nowIso,
 } from './lib/defaults';
 import { loadSnapshot, saveSnapshot } from './lib/persistence';
-import type { AppSnapshot, BrainEdge, BrainNode, Space } from './types';
-
-function applyElasticNodeMotion(
-  space: Space,
-  nodeId: string,
-  nextPosition: BrainNode['position'],
-): BrainNode[] {
-  const currentNode = space.nodes.find((node) => node.id === nodeId);
-  if (!currentNode) {
-    return space.nodes;
-  }
-
-  const dx = nextPosition.x - currentNode.position.x;
-  const dy = nextPosition.y - currentNode.position.y;
-  const nextNodes = space.nodes.map((node) =>
-    node.id === nodeId
-      ? {
-          ...node,
-          position: nextPosition,
-        }
-      : node,
-  );
-
-  if ((Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) || space.edges.length === 0) {
-    return nextNodes;
-  }
-
-  const movedByDrag = new Map<string, { dx: number; dy: number }>([[nodeId, { dx, dy }]]);
-
-  const adjacency = new Map<string, string[]>();
-  for (const edge of space.edges) {
-    adjacency.set(edge.source, [...(adjacency.get(edge.source) ?? []), edge.target]);
-    adjacency.set(edge.target, [...(adjacency.get(edge.target) ?? []), edge.source]);
-  }
-
-  const pullByNode = new Map<string, { dx: number; dy: number }>();
-  const draggedIds = new Set([nodeId]);
-
-  for (const [startId, delta] of movedByDrag) {
-    const queue: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
-    const visited = new Set([startId]);
-
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current) {
-        break;
-      }
-
-      if (current.depth >= 3) {
-        continue;
-      }
-
-      for (const neighborId of adjacency.get(current.id) ?? []) {
-        if (visited.has(neighborId) || draggedIds.has(neighborId)) {
-          continue;
-        }
-
-        visited.add(neighborId);
-
-        const strength = current.depth === 0 ? 0.34 : current.depth === 1 ? 0.16 : 0.08;
-        const previousPull = pullByNode.get(neighborId) ?? { dx: 0, dy: 0 };
-
-        pullByNode.set(neighborId, {
-          dx: previousPull.dx + delta.dx * strength,
-          dy: previousPull.dy + delta.dy * strength,
-        });
-
-        queue.push({ id: neighborId, depth: current.depth + 1 });
-      }
-    }
-  }
-
-  return nextNodes.map((node) => {
-    const pull = pullByNode.get(node.id);
-    if (!pull) {
-      return node;
-    }
-
-    return {
-      ...node,
-      position: {
-        x: node.position.x + pull.dx,
-        y: node.position.y + pull.dy,
-      },
-    };
-  });
-}
+import type { AppSnapshot, BrainNode, Space } from './types';
 
 function saveStatusLabel(status: 'booting' | 'saving' | 'saved' | 'error'): string {
   switch (status) {
@@ -280,28 +194,34 @@ export default function App() {
     });
   };
 
+  const handlePersistNodePositions = (nextNodes: BrainNode[]) => {
+    updateActiveSpace((space) => ({
+      ...space,
+      nodes: space.nodes.map((node) => {
+        const match = nextNodes.find((item) => item.id === node.id);
+        if (!match) {
+          return node;
+        }
+
+        return {
+          ...node,
+          position: match.position,
+        };
+      }),
+    }));
+  };
+
   const handleMoveNode = (nodeId: string, nextPosition: BrainNode['position']) => {
     updateActiveSpace((space) => ({
       ...space,
-      nodes: applyElasticNodeMotion(space, nodeId, nextPosition),
-    }));
-  };
-
-  const handlePanViewport = (x: number, y: number) => {
-    updateActiveSpace((space) => ({
-      ...space,
-      viewport: {
-        ...space.viewport,
-        x,
-        y,
-      },
-    }));
-  };
-
-  const handleViewportChange = (viewport: Space['viewport']) => {
-    updateActiveSpace((space) => ({
-      ...space,
-      viewport,
+      nodes: space.nodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              position: nextPosition,
+            }
+          : node,
+      ),
     }));
   };
 
@@ -336,22 +256,15 @@ export default function App() {
     }));
   };
 
-  const handleAddNeuron = () => {
-    const index = activeSpace.nodes.length;
-    const column = index % 3;
-    const row = Math.floor(index / 3);
-    const centerX = (360 - activeSpace.viewport.x) / activeSpace.viewport.zoom;
-    const centerY = (240 - activeSpace.viewport.y) / activeSpace.viewport.zoom;
-    const nextNode = createNeuronNode('', centerX + column * 120 - 120, centerY + row * 96 - 48);
+  const handleAddNeuron = (position?: BrainNode['position']) => {
+    const nextNode = createNeuronNode('', position?.x ?? 220, position?.y ?? 180);
     setIsMapEditing(true);
     setEditingNodeId(nextNode.id);
 
-    updateActiveSpace((space) => {
-      return {
-        ...space,
-        nodes: [...space.nodes, nextNode],
-      };
-    });
+    updateActiveSpace((space) => ({
+      ...space,
+      nodes: [...space.nodes, nextNode],
+    }));
   };
 
   const handleNodeLabelChange = (nodeId: string, nextLabel: string) => {
@@ -444,8 +357,6 @@ export default function App() {
     );
   }
 
-  const openTodos = activeSpace.todos.filter((todo) => !todo.completed).length;
-
   return (
     <div className="app-shell">
       <SpaceSidebar
@@ -484,15 +395,15 @@ export default function App() {
             onFinishRenameNode={handleFinishRenameNode}
             onMoveNode={handleMoveNode}
             onNodeLabelChange={handleNodeLabelChange}
-            onPanViewport={handlePanViewport}
+            onPersistNodePositions={handlePersistNodePositions}
             onStartRenameNode={handleStartRenameNode}
             onToggleEditMode={() => {
               setEditingNodeId(null);
               setIsMapEditing((current) => !current);
             }}
-            onViewportChange={handleViewportChange}
-            space={activeSpace}
             onToggleConnection={handleToggleConnection}
+            space={activeSpace}
+            theme={snapshot.theme}
           />
         </div>
       </main>
