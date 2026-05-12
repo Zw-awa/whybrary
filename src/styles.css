@@ -393,6 +393,108 @@ button {
   cursor: grabbing;
 }
 
+.graph-info {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+  width: 240px;
+  max-height: min(62vh, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line-soft);
+  background: rgba(251, 248, 243, 0.94);
+  box-shadow: var(--shadow-medium);
+  backdrop-filter: blur(10px);
+}
+
+:root[data-theme='dark'] .graph-info {
+  background: rgba(35, 32, 29, 0.94);
+}
+
+.graph-info__summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.88rem;
+  color: var(--text-soft);
+}
+
+.graph-info__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.graph-info__action {
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--panel-strong);
+  color: var(--text-main);
+  padding: 6px 10px;
+  font-size: 0.76rem;
+}
+
+.graph-info__action.is-active {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.graph-info__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.graph-info__action--danger {
+  border-color: color-mix(in srgb, #b44f44 36%, var(--line-soft));
+  color: #8a3b34;
+}
+
+.graph-info__list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.graph-info__item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  color: var(--text-main);
+  padding: 10px 12px;
+}
+
+.graph-info__item strong {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.graph-info__item span {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
+
+.graph-info__item.is-tracked {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.graph-info__item.is-selected {
+  border-color: var(--accent-warm);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-warm) 20%, transparent);
+}
+
 .cosmos-shell {
   position: relative;
 }
@@ -404,10 +506,32 @@ button {
   pointer-events: none;
 }
 
+.cosmos-link-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.cosmos-link-path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent-strong) 82%, #6f523d);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-opacity: 0.92;
+}
+
+:root[data-theme='dark'] .cosmos-link-path {
+  stroke: color-mix(in srgb, #d9b18a 88%, #7d5f47);
+  stroke-opacity: 0.96;
+}
+
 .cosmos-node-dot {
   position: absolute;
-  width: 34px;
-  height: 34px;
+  width: 46px;
+  height: 46px;
   border-radius: 999px;
   display: grid;
   place-items: center;
@@ -415,7 +539,9 @@ button {
   box-shadow:
     0 0 0 1px var(--line-soft),
     0 5px 12px rgba(40, 34, 28, 0.1);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
 }
 
 .cosmos-node-dot__core {
@@ -430,6 +556,10 @@ button {
   box-shadow:
     0 0 0 1px var(--line-soft),
     0 0 0 8px var(--accent-soft);
+}
+
+.cosmos-node-dot:active {
+  cursor: grabbing;
 }
 
 :root[data-theme='dark'] .cosmos-node-dot {

@@ -211,17 +211,10 @@ export default function App() {
     }));
   };
 
-  const handleMoveNode = (nodeId: string, nextPosition: BrainNode['position']) => {
+  const handleViewportChange = (viewport: Space['viewport']) => {
     updateActiveSpace((space) => ({
       ...space,
-      nodes: space.nodes.map((node) =>
-        node.id === nodeId
-          ? {
-              ...node,
-              position: nextPosition,
-            }
-          : node,
-      ),
+      viewport,
     }));
   };
 
@@ -256,6 +249,26 @@ export default function App() {
     }));
   };
 
+  const handleDeleteNodes = (nodeIds: string[]) => {
+    if (!activeSpace) {
+      return;
+    }
+
+    const deleteSet = new Set(nodeIds);
+    if (deleteSet.size === 0) {
+      return;
+    }
+
+    setEditingNodeId((current) => (current && deleteSet.has(current) ? null : current));
+    updateActiveSpace((space) => ({
+      ...space,
+      nodes: space.nodes.filter((node) => !deleteSet.has(node.id)),
+      edges: space.edges.filter(
+        (edge) => !deleteSet.has(edge.source) && !deleteSet.has(edge.target),
+      ),
+    }));
+  };
+
   const handleAddNeuron = (position?: BrainNode['position']) => {
     const nextNode = createNeuronNode('', position?.x ?? 220, position?.y ?? 180);
     setIsMapEditing(true);
@@ -265,6 +278,8 @@ export default function App() {
       ...space,
       nodes: [...space.nodes, nextNode],
     }));
+
+    return nextNode;
   };
 
   const handleNodeLabelChange = (nodeId: string, nextLabel: string) => {
@@ -390,10 +405,10 @@ export default function App() {
 
           <BrainCanvas
             editingNodeId={editingNodeId}
+            onDeleteNodes={handleDeleteNodes}
             isEditMode={isMapEditing}
             onAddNeuron={handleAddNeuron}
             onFinishRenameNode={handleFinishRenameNode}
-            onMoveNode={handleMoveNode}
             onNodeLabelChange={handleNodeLabelChange}
             onPersistNodePositions={handlePersistNodePositions}
             onStartRenameNode={handleStartRenameNode}
@@ -402,8 +417,8 @@ export default function App() {
               setIsMapEditing((current) => !current);
             }}
             onToggleConnection={handleToggleConnection}
+            onViewportChange={handleViewportChange}
             space={activeSpace}
-            theme={snapshot.theme}
           />
         </div>
       </main>

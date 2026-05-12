@@ -1,307 +1,392 @@
-import { Graph, type GraphConfigInterface } from '@cosmos.gl/graph';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { BrainNode, Space, ThemeMode } from '../types';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { BrainNode, Space } from '../types';
 
 type BrainCanvasProps = {
   editingNodeId: string | null;
+  onDeleteNodes: (nodeIds: string[]) => void;
   isEditMode: boolean;
-  onAddNeuron: (position?: BrainNode['position']) => void;
+  onAddNeuron: (position?: BrainNode['position']) => BrainNode | null;
   onFinishRenameNode: () => void;
-  onMoveNode: (nodeId: string, nextPosition: BrainNode['position']) => void;
   onNodeLabelChange: (nodeId: string, nextLabel: string) => void;
   onPersistNodePositions: (nextNodes: BrainNode[]) => void;
   onStartRenameNode: (nodeId: string) => void;
   onToggleEditMode: () => void;
   onToggleConnection: (sourceId: string, targetId: string) => void;
+  onViewportChange: (viewport: Space['viewport']) => void;
   space: Space;
-  theme: ThemeMode;
 };
 
-type LabelLayout = Record<
-  string,
-  {
-    dotLeft: number;
-    dotTop: number;
-    dotScale: number;
-    labelLeft: number;
-    labelTop: number;
-    labelScale: number;
-  }
->;
+type SimNode = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+};
 
 type DragState = {
   nodeId: string;
-  originX: number;
-  originY: number;
-  startX: number;
-  startY: number;
 };
 
+type PanState = {
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+};
+
+const NODE_RADIUS = 22;
 const LABEL_OFFSET = 18;
+const REPULSION_STRENGTH = 6200;
+const REPULSION_RADIUS = 190;
+const FAR_ATTRACTION_STRENGTH = 0.0009;
+const FAR_ATTRACTION_RADIUS = 360;
+const SPRING_STRENGTH = 0.012;
+const SPRING_LENGTH = 168;
+const DAMPING = 0.78;
+const CENTER_PULL = 0;
+const MAX_SPEED = 18;
+const MIN_MOVEMENT = 0.004;
+const PERSIST_DEBOUNCE_MS = 220;
+const OVERLAP_DISTANCE = 36;
+const OVERLAP_PUSH = 1.4;
 
-function buildGraphConfig(theme: ThemeMode): Partial<GraphConfigInterface> {
-  const isDark = theme === 'dark';
-
-  return {
-    backgroundColor: isDark ? '#191715' : '#fbf8f3',
-    spaceSize: 8192,
-    pointDefaultColor: isDark ? '#c6b49c' : '#7b7263',
-    pointDefaultSize: 10,
-    pointOpacity: 1,
-    pointSizeScale: 2.2,
-    pointGreyoutOpacity: 0.14,
-    hoveredPointCursor: 'grab',
-    hoveredLinkCursor: 'pointer',
-    renderHoveredPointRing: true,
-    hoveredPointRingColor: isDark ? '#f5efe9' : '#fff8f1',
-    focusedPointRingColor: isDark ? '#f5efe9' : '#fff8f1',
-    renderLinks: true,
-    linkDefaultColor: isDark ? '#b79776' : '#9e866f',
-    linkDefaultWidth: 2.2,
-    linkOpacity: 0.78,
-    linkGreyoutOpacity: 0.08,
-    linkWidthScale: 1,
-    curvedLinks: true,
-    curvedLinkSegments: 25,
-    curvedLinkWeight: 0.86,
-    curvedLinkControlPointDistance: 0.62,
-    linkDefaultArrows: false,
-    scalePointsOnZoom: true,
-    scaleLinksOnZoom: false,
-    useClassicQuadtree: false,
-    simulationDecay: 5000,
-    simulationGravity: 0,
-    simulationCenter: 0.12,
-    simulationRepulsion: 1,
-    simulationRepulsionTheta: 1.15,
-    simulationLinkSpring: 0.72,
-    simulationLinkDistance: 96,
-    simulationLinkDistRandomVariationRange: [1, 1],
-    simulationRepulsionFromMouse: 2,
-    enableRightClickRepulsion: false,
-    simulationFriction: 0.82,
-    simulationCluster: 0,
-    enableSimulation: true,
-    enableZoom: true,
-    enableDrag: false,
-    fitViewOnInit: true,
-    fitViewDelay: 120,
-    fitViewPadding: 0.22,
-    fitViewDuration: 520,
-    pixelRatio: 2,
-    showFPSMonitor: false,
-    attribution: '',
-  };
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
-function buildPointPositions(nodes: BrainNode[]): Float32Array {
-  return new Float32Array(nodes.flatMap((node) => [node.position.x, node.position.y]));
+function buildPath(source: SimNode, target: SimNode): string {
+  const dx = target.x - source.x;
+  const curve = Math.max(40, Math.abs(dx) * 0.28);
+  const offset = dx >= 0 ? curve : -curve;
+
+  return `M ${source.x} ${source.y} C ${source.x + offset} ${source.y}, ${target.x - offset} ${target.y}, ${target.x} ${target.y}`;
 }
 
-function buildLinks(nodes: BrainNode[], edges: Space['edges']): Float32Array {
-  const indexById = new Map(nodes.map((node, index) => [node.id, index]));
-  const values: number[] = [];
+function separationVector(a: SimNode, b: SimNode, fallbackSeed: number): [number, number] {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
 
-  for (const edge of edges) {
-    const source = indexById.get(edge.source);
-    const target = indexById.get(edge.target);
-    if (source === undefined || target === undefined) {
-      continue;
+  if (distance > 0.0001) {
+    return [dx / distance, dy / distance];
+  }
+
+  const angle = fallbackSeed * 2.399963229728653;
+  return [Math.cos(angle), Math.sin(angle)];
+}
+
+function buildSimNodes(space: Space): SimNode[] {
+  return space.nodes.map((node) => ({
+    id: node.id,
+    label: node.data.label,
+    x: node.position.x,
+    y: node.position.y,
+    vx: 0,
+    vy: 0,
+  }));
+}
+
+function mergeSimNodes(previous: SimNode[], space: Space): SimNode[] {
+  const previousById = new Map(previous.map((node) => [node.id, node]));
+
+  return space.nodes.map((node) => {
+    const existing = previousById.get(node.id);
+    if (!existing) {
+      return {
+        id: node.id,
+        label: node.data.label,
+        x: node.position.x,
+        y: node.position.y,
+        vx: 0,
+        vy: 0,
+      };
     }
 
-    values.push(source, target);
+    return {
+      ...existing,
+      label: node.data.label,
+    };
+  });
+}
+
+function samePositions(a: SimNode[], b: SimNode[]): boolean {
+  if (a.length !== b.length) {
+    return false;
   }
 
-  return new Float32Array(values);
+  return a.every((node, index) => {
+    const other = b[index];
+    return other && node.id === other.id && node.x === other.x && node.y === other.y;
+  });
 }
 
-function buildPointColors(count: number, theme: ThemeMode): Float32Array {
-  const color = theme === 'dark' ? [198, 180, 156, 1] : [123, 114, 99, 1];
-  return new Float32Array(Array.from({ length: count }, () => color).flat());
-}
-
-function buildPointSizes(count: number): Float32Array {
-  return new Float32Array(Array.from({ length: count }, () => 10));
-}
-
-function buildLinkColors(count: number, theme: ThemeMode): Float32Array {
-  const color = theme === 'dark' ? [183, 151, 118, 0.82] : [158, 134, 111, 0.78];
-  return new Float32Array(Array.from({ length: count }, () => color).flat());
-}
-
-function buildLinkWidths(count: number): Float32Array {
-  return new Float32Array(Array.from({ length: count }, () => 2.2));
-}
-
-function buildLinkArrows(count: number): boolean[] {
-  return Array.from({ length: count }, () => false);
-}
-
-function buildLinkStrengths(nodes: BrainNode[], edges: Space['edges']): Float32Array {
-  const degreeById = new Map<string, number>();
-
-  for (const node of nodes) {
-    degreeById.set(node.id, 0);
+function findSpawnPosition(
+  nodes: SimNode[],
+  viewport: Space['viewport'],
+  shell: HTMLDivElement | null,
+): { x: number; y: number } {
+  if (!shell) {
+    return { x: 220, y: 180 };
   }
 
-  for (const edge of edges) {
-    degreeById.set(edge.source, (degreeById.get(edge.source) ?? 0) + 1);
-    degreeById.set(edge.target, (degreeById.get(edge.target) ?? 0) + 1);
+  const rect = shell.getBoundingClientRect();
+  const centerX = (rect.width / 2 - viewport.x) / viewport.zoom;
+  const centerY = (rect.height / 2 - viewport.y) / viewport.zoom;
+  const offsets: Array<[number, number]> = [
+    [0, 0],
+    [84, 0],
+    [-84, 0],
+    [0, 84],
+    [0, -84],
+    [72, 72],
+    [-72, 72],
+    [72, -72],
+    [-72, -72],
+    [132, 0],
+    [0, 132],
+    [-132, 0],
+    [0, -132],
+  ];
+
+  for (const [dx, dy] of offsets) {
+    const x = centerX + dx;
+    const y = centerY + dy;
+    const overlaps = nodes.some((node) => {
+      const offsetX = node.x - x;
+      const offsetY = node.y - y;
+      return Math.sqrt(offsetX * offsetX + offsetY * offsetY) < 76;
+    });
+
+    if (!overlaps) {
+      return { x, y };
+    }
   }
 
-  return new Float32Array(
-    edges.map((edge) => {
-      const sourceDegree = degreeById.get(edge.source) ?? 1;
-      const targetDegree = degreeById.get(edge.target) ?? 1;
-      return 1 / Math.max(1, Math.min(sourceDegree, targetDegree));
-    }),
-  );
-}
-
-function indexOfNode(nodes: BrainNode[], id: string): number {
-  return nodes.findIndex((node) => node.id === id);
+  return { x: centerX + 160, y: centerY + 64 };
 }
 
 export function BrainCanvas({
   editingNodeId,
+  onDeleteNodes,
   isEditMode,
   onAddNeuron,
   onFinishRenameNode,
-  onMoveNode,
   onNodeLabelChange,
   onPersistNodePositions,
   onStartRenameNode,
   onToggleEditMode,
   onToggleConnection,
+  onViewportChange,
   space,
-  theme,
 }: BrainCanvasProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [labelLayout, setLabelLayout] = useState<LabelLayout>({});
-  const [graphError, setGraphError] = useState<string | null>(null);
+  const [isInfoMultiSelect, setIsInfoMultiSelect] = useState(false);
+  const [infoSelection, setInfoSelection] = useState<string[]>([]);
+  const [simNodes, setSimNodes] = useState<SimNode[]>(() => buildSimNodes(space));
   const [dragState, setDragState] = useState<DragState | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<Graph | null>(null);
-
+  const [panState, setPanState] = useState<PanState | null>(null);
+  const [isInfoOpen, setIsInfoOpen] = useState(false);
+  const [trackedNodeId, setTrackedNodeId] = useState<string | null>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const simNodesRef = useRef<SimNode[]>(simNodes);
+  const dragStateRef = useRef<DragState | null>(dragState);
+  const dragPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const selectedNodeIdRef = useRef<string | null>(selectedNodeId);
+  const suppressClickRef = useRef(false);
+  const persistTimerRef = useRef<number | null>(null);
+  const frameRef = useRef<number | null>(null);
   const nodeSignature = useMemo(() => space.nodes.map((node) => node.id).join('|'), [space.nodes]);
   const edgeSignature = useMemo(
     () => space.edges.map((edge) => `${edge.source}:${edge.target}`).join('|'),
     [space.edges],
   );
 
-  const syncLabelLayout = () => {
-    const graph = graphRef.current;
-    if (!graph) {
-      return;
-    }
-
-    const positions = graph.getPointPositions();
-    const zoom = Math.max(0.35, graph.getZoomLevel() || 1);
-    const nextLayout: LabelLayout = {};
-
-    space.nodes.forEach((node, index) => {
-      const x = positions[index * 2];
-      const y = positions[index * 2 + 1];
-      const [screenX, screenY] =
-        x === undefined || y === undefined
-          ? graph.spaceToScreenPosition([node.position.x, node.position.y])
-          : graph.spaceToScreenPosition([x, y]);
-
-      nextLayout[node.id] = {
-        dotLeft: screenX,
-        dotTop: screenY,
-        dotScale: Math.max(0.82, Math.min(1.32, zoom * 0.92)),
-        labelLeft: screenX,
-        labelTop: screenY + LABEL_OFFSET,
-        labelScale: Math.max(0.72, Math.min(1.15, zoom)),
-      };
-    });
-
-    setLabelLayout(nextLayout);
-  };
-
-  const syncNodePositionsToState = () => {
-    const graph = graphRef.current;
-    if (!graph) {
-      return;
-    }
-
-    const positions = graph.getPointPositions();
-    const nextNodes = space.nodes.map((node, index) => {
-      const x = positions[index * 2];
-      const y = positions[index * 2 + 1];
-
-      if (x === undefined || y === undefined) {
-        return node;
-      }
-
-      return {
-        ...node,
-        position: { x, y },
-      };
-    });
-
-    onPersistNodePositions(nextNodes);
-  };
-
-  const mountGraph = () => {
-    const container = containerRef.current;
-    if (!container) {
-      return null;
-    }
-
-    const graph = new Graph(container, buildGraphConfig(theme));
-    graph.setConfig({
-      onZoom: () => {
-        syncLabelLayout();
-      },
-      onZoomEnd: () => {
-        syncLabelLayout();
-      },
-      onSimulationTick: () => {
-        syncLabelLayout();
-      },
-      onDragEnd: () => {
-        syncLabelLayout();
-        syncNodePositionsToState();
-      },
-      onSimulationEnd: () => {
-        syncLabelLayout();
-        syncNodePositionsToState();
-      },
-    });
-    graph.setPointPositions(buildPointPositions(space.nodes), true);
-    graph.setPointColors(buildPointColors(space.nodes.length, theme));
-    graph.setPointSizes(buildPointSizes(space.nodes.length));
-    graph.setLinks(buildLinks(space.nodes, space.edges));
-    graph.setLinkColors(buildLinkColors(space.edges.length, theme));
-    graph.setLinkWidths(buildLinkWidths(space.edges.length));
-    graph.setLinkArrows(buildLinkArrows(space.edges.length));
-    graph.setLinkStrength(buildLinkStrengths(space.nodes, space.edges));
-    graph.trackPointPositionsByIndices(space.nodes.map((_, index) => index));
-    graph.render(0.28);
-    graph.fitView(320, 0.22);
-    graphRef.current = graph;
-    syncLabelLayout();
-    return graph;
-  };
+  useEffect(() => {
+    simNodesRef.current = simNodes;
+  }, [simNodes]);
 
   useEffect(() => {
-    try {
-      graphRef.current?.destroy();
-      graphRef.current = null;
-      mountGraph();
-      setGraphError(null);
-    } catch (error) {
-      setGraphError(error instanceof Error ? error.message : 'Failed to initialize graph renderer.');
-      graphRef.current = null;
+    dragStateRef.current = dragState;
+  }, [dragState]);
+
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId;
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    if (!selectedNodeId) {
+      return;
     }
 
-    return () => {
-      graphRef.current?.destroy();
-      graphRef.current = null;
+    if (!isInfoMultiSelect) {
+      setInfoSelection([selectedNodeId]);
+    }
+  }, [isInfoMultiSelect, selectedNodeId]);
+
+  useLayoutEffect(() => {
+    setSimNodes((current) => mergeSimNodes(current, space));
+  }, [nodeSignature, edgeSignature, space]);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) {
+      return;
+    }
+
+    const step = () => {
+      const current = simNodesRef.current;
+      if (current.length === 0) {
+        frameRef.current = window.requestAnimationFrame(step);
+        return;
+      }
+
+      const rect = shell.getBoundingClientRect();
+      const centerX = (rect.width / 2 - space.viewport.x) / space.viewport.zoom;
+      const centerY = (rect.height / 2 - space.viewport.y) / space.viewport.zoom;
+      const next = current.map((node) => ({ ...node }));
+      const indexById = new Map(next.map((node, index) => [node.id, index]));
+      const draggedNodeId = dragStateRef.current?.nodeId ?? null;
+      const dragPointer = dragPointerRef.current;
+
+      if (draggedNodeId && dragPointer) {
+        const draggedIndex = indexById.get(draggedNodeId);
+        if (draggedIndex !== undefined) {
+          next[draggedIndex].x = dragPointer.x;
+          next[draggedIndex].y = dragPointer.y;
+          next[draggedIndex].vx = 0;
+          next[draggedIndex].vy = 0;
+        }
+      }
+
+      for (let i = 0; i < next.length; i += 1) {
+        for (let j = i + 1; j < next.length; j += 1) {
+          const a = next[i];
+          const b = next[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const distanceSq = dx * dx + dy * dy + 0.01;
+          const distance = Math.sqrt(distanceSq);
+          const [dirX, dirY] = separationVector(a, b, i + j + 1);
+          let fx = 0;
+          let fy = 0;
+
+          if (distance < OVERLAP_DISTANCE) {
+            const overlap = 1 - distance / OVERLAP_DISTANCE;
+            fx += dirX * overlap * OVERLAP_PUSH;
+            fy += dirY * overlap * OVERLAP_PUSH;
+          } else if (distance < REPULSION_RADIUS) {
+            const closeness = 1 - distance / REPULSION_RADIUS;
+            const force = (REPULSION_STRENGTH * closeness * closeness) / distanceSq;
+            fx += dirX * force;
+            fy += dirY * force;
+          } else if (distance > FAR_ATTRACTION_RADIUS) {
+            const stretch = distance - FAR_ATTRACTION_RADIUS;
+            const force = stretch * FAR_ATTRACTION_STRENGTH;
+            fx -= dirX * force;
+            fy -= dirY * force;
+          }
+
+          if (a.id !== draggedNodeId) {
+            a.vx -= fx;
+            a.vy -= fy;
+          }
+
+          if (b.id !== draggedNodeId) {
+            b.vx += fx;
+            b.vy += fy;
+          }
+        }
+      }
+
+      for (const edge of space.edges) {
+        const sourceIndex = indexById.get(edge.source);
+        const targetIndex = indexById.get(edge.target);
+        if (sourceIndex === undefined || targetIndex === undefined) {
+          continue;
+        }
+
+        const source = next[sourceIndex];
+        const target = next[targetIndex];
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+        const stretch = distance - SPRING_LENGTH;
+        const force = stretch * SPRING_STRENGTH;
+        const fx = (dx / distance) * force;
+        const fy = (dy / distance) * force;
+
+        if (source.id !== draggedNodeId) {
+          source.vx += fx;
+          source.vy += fy;
+        }
+
+        if (target.id !== draggedNodeId) {
+          target.vx -= fx;
+          target.vy -= fy;
+        }
+      }
+
+      let moved = false;
+      let driftingNodes = 0;
+      let totalVx = 0;
+      let totalVy = 0;
+
+      for (const node of next) {
+        if (node.id === draggedNodeId) {
+          node.vx = 0;
+          node.vy = 0;
+          continue;
+        }
+
+        node.vx += (centerX - node.x) * CENTER_PULL;
+        node.vy += (centerY - node.y) * CENTER_PULL;
+        node.vx *= DAMPING;
+        node.vy *= DAMPING;
+        node.vx = clamp(node.vx, -MAX_SPEED, MAX_SPEED);
+        node.vy = clamp(node.vy, -MAX_SPEED, MAX_SPEED);
+        totalVx += node.vx;
+        totalVy += node.vy;
+        driftingNodes += 1;
+      }
+
+      const driftVx = driftingNodes > 0 ? totalVx / driftingNodes : 0;
+      const driftVy = driftingNodes > 0 ? totalVy / driftingNodes : 0;
+
+      for (const node of next) {
+        if (node.id === draggedNodeId) {
+          continue;
+        }
+
+        node.vx -= driftVx;
+        node.vy -= driftVy;
+
+        if (Math.abs(node.vx) > MIN_MOVEMENT || Math.abs(node.vy) > MIN_MOVEMENT) {
+          moved = true;
+        }
+
+        node.x += node.vx;
+        node.y += node.vy;
+      }
+
+      if (moved || draggedNodeId) {
+        if (!samePositions(current, next)) {
+          simNodesRef.current = next;
+          setSimNodes(next);
+        }
+      }
+
+      frameRef.current = window.requestAnimationFrame(step);
     };
-  }, [space.id, nodeSignature, edgeSignature, theme]);
+
+    frameRef.current = window.requestAnimationFrame(step);
+    return () => {
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, [space.edges, space.viewport.x, space.viewport.y, space.viewport.zoom]);
 
   useEffect(() => {
     if (!dragState) {
@@ -309,20 +394,46 @@ export function BrainCanvas({
     }
 
     const handleMove = (event: PointerEvent) => {
-      const graph = graphRef.current;
-      const layout = labelLayout[dragState.nodeId];
-      if (!graph || !layout) {
+      const shell = shellRef.current;
+      if (!shell) {
         return;
       }
 
-      const nextScreenX = dragState.originX + (event.clientX - dragState.startX);
-      const nextScreenY = dragState.originY + (event.clientY - dragState.startY);
-      const [spaceX, spaceY] = graph.screenToSpacePosition([nextScreenX, nextScreenY]);
-      onMoveNode(dragState.nodeId, { x: spaceX, y: spaceY });
+      const rect = shell.getBoundingClientRect();
+      const nextX =
+        (event.clientX - rect.left - space.viewport.x) / space.viewport.zoom;
+      const nextY =
+        (event.clientY - rect.top - space.viewport.y) / space.viewport.zoom;
+
+      dragPointerRef.current = { x: nextX, y: nextY };
     };
 
     const handleEnd = () => {
       setDragState(null);
+      dragPointerRef.current = null;
+
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+      }
+
+      persistTimerRef.current = window.setTimeout(() => {
+        const nextNodes = space.nodes.map((node) => {
+          const simNode = simNodesRef.current.find((item) => item.id === node.id);
+          if (!simNode) {
+            return node;
+          }
+
+          return {
+            ...node,
+            position: {
+              x: simNode.x,
+              y: simNode.y,
+            },
+          };
+        });
+
+        onPersistNodePositions(nextNodes);
+      }, PERSIST_DEBOUNCE_MS);
     };
 
     window.addEventListener('pointermove', handleMove);
@@ -334,33 +445,178 @@ export function BrainCanvas({
       window.removeEventListener('pointerup', handleEnd);
       window.removeEventListener('pointercancel', handleEnd);
     };
-  }, [dragState, labelLayout, onMoveNode]);
-
-  const handlePointSelection = (nodeId: string) => {
-    if (!isEditMode) {
-      return;
-    }
-
-    if (selectedNodeId && selectedNodeId !== nodeId) {
-      onToggleConnection(selectedNodeId, nodeId);
-      setSelectedNodeId(null);
-      return;
-    }
-
-    setSelectedNodeId((current) => (current === nodeId ? null : nodeId));
-  };
+  }, [dragState, onPersistNodePositions, space.nodes, space.viewport.x, space.viewport.y, space.viewport.zoom]);
 
   useEffect(() => {
-    if (!isEditMode) {
+    if (!panState) {
+      return;
+    }
+
+    const handleMove = (event: PointerEvent) => {
+      onViewportChange({
+        ...space.viewport,
+        x: panState.originX + (event.clientX - panState.startX),
+        y: panState.originY + (event.clientY - panState.startY),
+      });
+    };
+
+    const handleEnd = () => {
+      setPanState(null);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleEnd);
+    window.addEventListener('pointercancel', handleEnd);
+
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleEnd);
+      window.removeEventListener('pointercancel', handleEnd);
+    };
+  }, [onViewportChange, panState, space.viewport]);
+
+  useEffect(() => {
+    if (!selectedNodeId) {
+      return;
+    }
+
+    const exists = space.nodes.some((node) => node.id === selectedNodeId);
+    if (!exists) {
       setSelectedNodeId(null);
     }
-  }, [isEditMode]);
+  }, [selectedNodeId, space.nodes]);
+
+  useEffect(() => {
+    setInfoSelection((current) =>
+      current.filter((nodeId) => space.nodes.some((node) => node.id === nodeId)),
+    );
+  }, [space.nodes]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const selection =
+        infoSelection.length > 0
+          ? infoSelection
+          : selectedNodeIdRef.current
+            ? [selectedNodeIdRef.current]
+            : [];
+
+    if (selection.length === 0) {
+      return;
+    }
+
+      if (event.key !== 'Backspace' && event.key !== 'Delete') {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      const editingField =
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        (target instanceof HTMLElement && target.isContentEditable);
+
+      if (editingField) {
+        return;
+      }
+
+      event.preventDefault();
+      onDeleteNodes(selection);
+      setInfoSelection([]);
+      setSelectedNodeId(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [infoSelection, onDeleteNodes]);
+
+  useEffect(() => {
+    if (!trackedNodeId) {
+      return;
+    }
+
+    const exists = simNodes.some((node) => node.id === trackedNodeId);
+    if (!exists) {
+      setTrackedNodeId(null);
+    }
+  }, [simNodes, trackedNodeId]);
+
+  useEffect(() => {
+    return () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+      }
+    };
+  }, []);
+
+  const nodeById = useMemo(() => new Map(simNodes.map((node) => [node.id, node])), [simNodes]);
+  const trackedNode = trackedNodeId ? nodeById.get(trackedNodeId) : undefined;
+
+  const getViewportForNode = (node: SimNode | undefined): Space['viewport'] | null => {
+    const shell = shellRef.current;
+    if (!shell || !node) {
+      return null;
+    }
+
+    const rect = shell.getBoundingClientRect();
+    return {
+      x: rect.width / 2 - node.x * space.viewport.zoom,
+      y: rect.height / 2 - node.y * space.viewport.zoom,
+      zoom: space.viewport.zoom,
+    };
+  };
+
+  const commitTrackedViewportAndClear = () => {
+    if (!trackedNodeId) {
+      return;
+    }
+
+    const nextViewport = getViewportForNode(trackedNode);
+    if (nextViewport) {
+      onViewportChange(nextViewport);
+    }
+
+    setTrackedNodeId(null);
+  };
+
+  const effectiveViewport = getViewportForNode(trackedNode) ?? space.viewport;
+  const deleteInfoSelection = () => {
+    if (infoSelection.length === 0) {
+      return;
+    }
+
+    const preview = infoSelection
+      .map((nodeId) => simNodesRef.current.find((node) => node.id === nodeId)?.label || 'Untitled')
+      .slice(0, 3)
+      .join(', ');
+    const suffix = infoSelection.length > 3 ? ` and ${infoSelection.length - 3} more` : '';
+    const confirmed = window.confirm(
+      `Delete ${infoSelection.length} selected node${infoSelection.length > 1 ? 's' : ''}? ${preview}${suffix}`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    onDeleteNodes(infoSelection);
+    setInfoSelection([]);
+    setSelectedNodeId(null);
+  };
 
   return (
     <section className="panel panel--graph">
       <div className="panel__header">
         <h2>Mind Map</h2>
         <div className="panel__actions">
+          <button
+            className="button"
+            onClick={() => setIsInfoOpen((current) => !current)}
+            type="button"
+          >
+            {isInfoOpen ? 'Hide Info' : 'Show Info'}
+          </button>
           <button className="button button--ghost" onClick={onToggleEditMode} type="button">
             {isEditMode ? 'Done' : 'Edit Content'}
           </button>
@@ -368,16 +624,51 @@ export function BrainCanvas({
             <button
               className="button button--accent"
               onClick={() => {
-                const graph = graphRef.current;
-                const container = containerRef.current;
-                if (!graph || !container) {
-                  onAddNeuron();
+                const shell = shellRef.current;
+                if (!shell) {
+                  const nextNode = onAddNeuron();
+                  if (nextNode) {
+                    setSelectedNodeId(nextNode.id);
+                    setSimNodes((current) =>
+                      current.some((node) => node.id === nextNode.id)
+                        ? current
+                        : [
+                            ...current,
+                            {
+                              id: nextNode.id,
+                              label: nextNode.data.label,
+                              x: nextNode.position.x,
+                              y: nextNode.position.y,
+                              vx: 0,
+                              vy: 0,
+                            },
+                          ],
+                    );
+                  }
                   return;
                 }
 
-                const rect = container.getBoundingClientRect();
-                const position = graph.screenToSpacePosition([rect.width / 2, rect.height / 2]);
-                onAddNeuron({ x: position[0], y: position[1] });
+                const nextNode = onAddNeuron(
+                  findSpawnPosition(simNodesRef.current, effectiveViewport, shell),
+                );
+                if (nextNode) {
+                  setSelectedNodeId(nextNode.id);
+                  setSimNodes((current) =>
+                    current.some((node) => node.id === nextNode.id)
+                      ? current
+                      : [
+                          ...current,
+                          {
+                            id: nextNode.id,
+                            label: nextNode.data.label,
+                            x: nextNode.position.x,
+                            y: nextNode.position.y,
+                            vx: 0,
+                            vy: 0,
+                          },
+                        ],
+                  );
+                }
               }}
               type="button"
             >
@@ -387,97 +678,284 @@ export function BrainCanvas({
         </div>
       </div>
 
-      <div className="graph-shell graph-shell--custom cosmos-shell" ref={containerRef}>
-        {graphError ? (
-          <div className="graph-fallback">
-            <strong>Graph failed to initialize</strong>
-            <span>{graphError}</span>
-          </div>
+      <div
+        className={`graph-shell graph-shell--custom ${isEditMode ? 'is-editing' : 'is-viewing'} ${panState ? 'is-panning' : ''}`}
+        onClick={() => {
+          if (isEditMode) {
+            setSelectedNodeId(null);
+          }
+        }}
+        onWheel={(event) => {
+          event.preventDefault();
+          commitTrackedViewportAndClear();
+          const shell = shellRef.current;
+          if (!shell) {
+            return;
+          }
+
+          const rect = shell.getBoundingClientRect();
+          const pointerX = event.clientX - rect.left;
+          const pointerY = event.clientY - rect.top;
+          const zoomDelta = event.deltaY > 0 ? 0.92 : 1.08;
+          const nextZoom = clamp(space.viewport.zoom * zoomDelta, 0.35, 1.8);
+          if (nextZoom === space.viewport.zoom) {
+            return;
+          }
+
+          const worldX = (pointerX - effectiveViewport.x) / effectiveViewport.zoom;
+          const worldY = (pointerY - effectiveViewport.y) / effectiveViewport.zoom;
+
+          onViewportChange({
+            x: pointerX - worldX * nextZoom,
+            y: pointerY - worldY * nextZoom,
+            zoom: nextZoom,
+          });
+        }}
+        onPointerDown={(event) => {
+          const target = event.target as HTMLElement;
+      if (target.closest('.mind-node')) {
+        return;
+      }
+
+          commitTrackedViewportAndClear();
+          setPanState({
+            startX: event.clientX,
+            startY: event.clientY,
+            originX: effectiveViewport.x,
+            originY: effectiveViewport.y,
+          });
+        }}
+        ref={shellRef}
+      >
+        {isInfoOpen ? (
+          <aside
+            className="graph-info"
+            onPointerDown={(event) => event.stopPropagation()}
+            onWheelCapture={(event) => event.stopPropagation()}
+          >
+            <div className="graph-info__summary">
+              <strong>{simNodes.length} nodes</strong>
+              <span>{space.edges.length} links</span>
+            </div>
+
+            <div className="graph-info__actions">
+              <button
+                className={`graph-info__action ${isInfoMultiSelect ? 'is-active' : ''}`}
+                onClick={() => {
+                  setIsInfoMultiSelect((current) => {
+                    const next = !current;
+                    if (next) {
+                      setTrackedNodeId(null);
+                      setSelectedNodeId(null);
+                      setInfoSelection([]);
+                    } else if (selectedNodeIdRef.current) {
+                      setInfoSelection([selectedNodeIdRef.current]);
+                    }
+                    return next;
+                  });
+                }}
+                type="button"
+              >
+                {isInfoMultiSelect ? 'Multi On' : 'Multi Off'}
+              </button>
+              <button
+                className="graph-info__action"
+                onClick={() => setInfoSelection(simNodes.map((node) => node.id))}
+                type="button"
+                disabled={!isInfoMultiSelect}
+              >
+                Select All
+              </button>
+              <button
+                className="graph-info__action"
+                onClick={() => {
+                  setInfoSelection([]);
+                  setSelectedNodeId(null);
+                }}
+                type="button"
+              >
+                Clear
+              </button>
+              <button
+                className="graph-info__action graph-info__action--danger"
+                disabled={infoSelection.length === 0}
+                onClick={deleteInfoSelection}
+                type="button"
+              >
+                Delete Selected
+              </button>
+            </div>
+
+            <div className="graph-info__list" onWheelCapture={(event) => event.stopPropagation()}>
+              {simNodes.map((node, index) => (
+                <button
+                  className={`graph-info__item ${trackedNodeId === node.id ? 'is-tracked' : ''} ${infoSelection.includes(node.id) ? 'is-selected' : ''}`}
+                  key={node.id}
+                  onClick={() => {
+                    setSelectedNodeId(node.id);
+                    if (isInfoMultiSelect) {
+                      setInfoSelection((current) =>
+                        current.includes(node.id)
+                          ? current.filter((item) => item !== node.id)
+                          : [...current, node.id],
+                      );
+                      return;
+                    }
+
+                    setTrackedNodeId(node.id);
+                    setInfoSelection([node.id]);
+                  }}
+                  type="button"
+                >
+                  <strong>{node.label || `Untitled ${index + 1}`}</strong>
+                  <span>
+                    {node.x.toFixed(0)}, {node.y.toFixed(0)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </aside>
         ) : null}
 
-        <div className="cosmos-overlay">
-          {space.nodes.map((node) => {
-            const layout = labelLayout[node.id] ?? {
-              dotLeft: 0,
-              dotTop: 0,
-              dotScale: 1,
-              labelLeft: 0,
-              labelTop: 0,
-              labelScale: 1,
+        <svg className="mind-map__edges" preserveAspectRatio="none">
+          {space.edges.map((edge) => {
+            const source = nodeById.get(edge.source);
+            const target = nodeById.get(edge.target);
+            if (!source || !target) {
+              return null;
+            }
+
+            const screenSource = {
+              ...source,
+              x: source.x * effectiveViewport.zoom + effectiveViewport.x,
+              y: source.y * effectiveViewport.zoom + effectiveViewport.y,
             };
+            const screenTarget = {
+              ...target,
+              x: target.x * effectiveViewport.zoom + effectiveViewport.x,
+              y: target.y * effectiveViewport.zoom + effectiveViewport.y,
+            };
+
+            return <path className="mind-map__edge" d={buildPath(screenSource, screenTarget)} key={edge.id} />;
+          })}
+        </svg>
+
+        <div className="mind-map__nodes">
+          {simNodes.map((node) => {
             const editing = isEditMode && editingNodeId === node.id;
 
             return (
-              <>
-                <div
-                  className={`cosmos-node-dot ${selectedNodeId === node.id ? 'is-selected' : ''}`}
-                  key={`${node.id}-dot`}
-                  onPointerDown={(event) => {
+              <div
+                className={`mind-node ${selectedNodeId === node.id ? 'is-selected' : ''}`}
+                key={node.id}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  commitTrackedViewportAndClear();
+                  setSelectedNodeId(node.id);
+                  suppressClickRef.current = true;
+                  const shell = shellRef.current;
+                  if (!shell) {
+                    return;
+                  }
+
+                  const shellRect = shell.getBoundingClientRect();
+                  dragPointerRef.current = {
+                    x: (event.clientX - shellRect.left - effectiveViewport.x) / effectiveViewport.zoom,
+                    y: (event.clientY - shellRect.top - effectiveViewport.y) / effectiveViewport.zoom,
+                  };
+                  setDragState({
+                    nodeId: node.id,
+                  });
+                }}
+                style={{
+                  left: `${node.x * effectiveViewport.zoom + effectiveViewport.x}px`,
+                  top: `${node.y * effectiveViewport.zoom + effectiveViewport.y}px`,
+                  transform: `translate(-50%, -50%) scale(${effectiveViewport.zoom})`,
+                }}
+              >
+                <button
+                  className={`mind-node__dot ${isEditMode ? 'is-editable' : ''}`}
+                  onClick={(event) => {
                     event.stopPropagation();
-                    setDragState({
-                      nodeId: node.id,
-                      originX: layout.dotLeft,
-                      originY: layout.dotTop,
-                      startX: event.clientX,
-                      startY: event.clientY,
-                    });
-                  }}
-                  style={{
-                    left: `${layout.dotLeft}px`,
-                    top: `${layout.dotTop}px`,
-                    transform: `translate(-50%, -50%) scale(${layout.dotScale})`,
-                  }}
-                >
-                  <span className="cosmos-node-dot__core" />
-                </div>
 
-                <div
-                  className={`cosmos-node-label ${isEditMode ? 'is-interactive' : ''} ${editing ? 'is-editing' : ''}`}
-                  key={`${node.id}-label`}
-                  style={{
-                    left: `${layout.labelLeft}px`,
-                    top: `${layout.labelTop}px`,
-                    transform: `translate(-50%, -50%) scale(${layout.labelScale})`,
-                  }}
-                >
-                  {editing ? (
-                    <input
-                      autoFocus
-                      className="cosmos-node-input"
-                      onBlur={onFinishRenameNode}
-                      onChange={(event) => onNodeLabelChange(node.id, event.target.value)}
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === 'Escape') {
-                          onFinishRenameNode();
-                        }
-                      }}
-                      placeholder="Untitled"
-                      type="text"
-                      value={node.data.label}
-                    />
-                  ) : (
-                    <button
-                      className="cosmos-node-label__button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handlePointSelection(node.id);
-                      }}
-                      onDoubleClick={(event) => {
-                        if (!isEditMode) {
-                          return;
-                        }
+                    if (suppressClickRef.current) {
+                      suppressClickRef.current = false;
+                      return;
+                    }
 
-                        event.stopPropagation();
-                        onStartRenameNode(node.id);
-                      }}
-                      type="button"
-                    >
-                      {node.data.label || 'Untitled'}
-                    </button>
-                  )}
-                </div>
-              </>
+                    if (selectedNodeId && selectedNodeId !== node.id) {
+                      if (isEditMode) {
+                        onToggleConnection(selectedNodeId, node.id);
+                      }
+                      setSelectedNodeId(null);
+                      return;
+                    }
+
+                    setSelectedNodeId((current) => (current === node.id ? null : node.id));
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    onStartRenameNode(node.id);
+                  }}
+                  type="button"
+                >
+                  <span className="mind-node__core" />
+                </button>
+
+                {editing ? (
+                  <input
+                    autoFocus
+                    className="mind-node__input"
+                    onBlur={onFinishRenameNode}
+                    onChange={(event) => onNodeLabelChange(node.id, event.target.value)}
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === 'Escape') {
+                        onFinishRenameNode();
+                      }
+                    }}
+                    placeholder="Untitled"
+                    type="text"
+                    value={space.nodes.find((item) => item.id === node.id)?.data.label ?? node.label}
+                  />
+                ) : (
+                  <button
+                    className={`mind-node__label ${isEditMode ? 'is-editable' : ''}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+
+                      if (suppressClickRef.current) {
+                        suppressClickRef.current = false;
+                        return;
+                      }
+
+                      if (selectedNodeId && selectedNodeId !== node.id) {
+                        if (isEditMode) {
+                          onToggleConnection(selectedNodeId, node.id);
+                        }
+                        setSelectedNodeId(null);
+                        return;
+                      }
+
+                      setSelectedNodeId((current) => (current === node.id ? null : node.id));
+                    }}
+                    onDoubleClick={(event) => {
+                      if (!isEditMode) {
+                        return;
+                      }
+
+                      event.stopPropagation();
+                      onStartRenameNode(node.id);
+                    }}
+                    style={{
+                      transform: `translateY(${LABEL_OFFSET}px)`,
+                    }}
+                    type="button"
+                  >
+                    {(space.nodes.find((item) => item.id === node.id)?.data.label ?? node.label) || 'Untitled'}
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
