@@ -108,6 +108,6 @@ jobs:
           releaseDraft: true
           prerelease: false
           includeDebug: false
-          uploadUpdaterJson: false
+          includeUpdaterJson: false
           projectPath: .
           args: ${{ matrix.bundle_args }}
