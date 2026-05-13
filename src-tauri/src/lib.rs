@@ -4,9 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
-const INIT_SQL: &str = r#"
-PRAGMA foreign_keys = ON;
+const LATEST_SCHEMA_VERSION: i32 = 1;
 
+const MIGRATION_1_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -123,10 +123,58 @@ struct AppSnapshot {
     last_opened_at: String,
 }
 
-fn initialize_schema(connection: &Connection) -> Result<(), String> {
+fn configure_connection(connection: &Connection) -> Result<(), String> {
     connection
-        .execute_batch(INIT_SQL)
-        .map_err(|error| format!("Unable to initialize SQLite schema: {error}"))
+        .execute_batch("PRAGMA foreign_keys = ON;")
+        .map_err(|error| format!("Unable to configure SQLite connection: {error}"))
+}
+
+fn load_schema_version(connection: &Connection) -> Result<i32, String> {
+    connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|error| format!("Unable to read SQLite schema version: {error}"))
+}
+
+fn set_schema_version(connection: &Connection, version: i32) -> Result<(), String> {
+    connection
+        .pragma_update(None, "user_version", version)
+        .map_err(|error| format!("Unable to update SQLite schema version to {version}: {error}"))
+}
+
+fn migrate_to_v1(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(MIGRATION_1_SQL)
+        .map_err(|error| format!("Unable to apply SQLite migration 0 -> 1: {error}"))?;
+    set_schema_version(connection, 1)
+}
+
+fn run_migrations(connection: &Connection) -> Result<(), String> {
+    let mut version = load_schema_version(connection)?;
+    if version > LATEST_SCHEMA_VERSION {
+        return Err(format!(
+            "SQLite schema version {version} is newer than this build supports ({LATEST_SCHEMA_VERSION})."
+        ));
+    }
+
+    while version < LATEST_SCHEMA_VERSION {
+        match version {
+            0 => migrate_to_v1(connection)?,
+            _ => {
+                return Err(format!(
+                    "No SQLite migration path from version {version} to {LATEST_SCHEMA_VERSION}."
+                ))
+            }
+        }
+
+        version = load_schema_version(connection)?;
+    }
+
+    Ok(())
+}
+
+fn prepare_connection(connection: &Connection) -> Result<(), String> {
+    configure_connection(connection)?;
+    run_migrations(connection)
 }
 
 fn app_db_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -146,7 +194,7 @@ fn open_connection(app: &AppHandle) -> Result<Connection, String> {
     let db_path = app_db_path(app)?;
     let connection = Connection::open(db_path).map_err(|error| format!("Unable to open SQLite: {error}"))?;
 
-    initialize_schema(&connection)?;
+    prepare_connection(&connection)?;
 
     Ok(connection)
 }
@@ -451,7 +499,7 @@ mod tests {
 
     fn open_test_connection() -> Connection {
         let connection = Connection::open_in_memory().expect("in-memory sqlite");
-        initialize_schema(&connection).expect("initialize schema");
+        prepare_connection(&connection).expect("prepare connection");
         connection
     }
 
@@ -562,6 +610,28 @@ mod tests {
     }
 
     #[test]
+    fn fresh_db_sets_latest_schema_version() {
+        let connection = open_test_connection();
+
+        assert_eq!(
+            load_schema_version(&connection).expect("load schema version"),
+            LATEST_SCHEMA_VERSION
+        );
+    }
+
+    #[test]
+    fn prepare_connection_is_idempotent_for_current_schema() {
+        let connection = open_test_connection();
+
+        prepare_connection(&connection).expect("prepare connection again");
+
+        assert_eq!(
+            load_schema_version(&connection).expect("load schema version"),
+            LATEST_SCHEMA_VERSION
+        );
+    }
+
+    #[test]
     fn round_trips_snapshot_through_sqlite() {
         let mut connection = open_test_connection();
         let snapshot = make_snapshot();
@@ -600,6 +670,46 @@ mod tests {
 
         let active_space = load_setting(&connection, "activeSpaceId").expect("load active space setting");
         assert_eq!(active_space, None);
+        assert_eq!(
+            load_schema_version(&connection).expect("load schema version"),
+            LATEST_SCHEMA_VERSION
+        );
+    }
+
+    #[test]
+    fn migrates_legacy_unversioned_schema_without_losing_data() {
+        let mut connection = Connection::open_in_memory().expect("in-memory sqlite");
+        configure_connection(&connection).expect("configure connection");
+        connection
+            .execute_batch(MIGRATION_1_SQL)
+            .expect("initialize legacy schema");
+
+        let snapshot = make_snapshot();
+        save_snapshot_to_connection(&mut connection, &snapshot).expect("save legacy snapshot");
+
+        assert_eq!(load_schema_version(&connection).expect("schema version before migration"), 0);
+
+        run_migrations(&connection).expect("migrate legacy schema");
+        let loaded = load_snapshot_from_connection(&connection).expect("load migrated snapshot");
+
+        assert_eq!(
+            load_schema_version(&connection).expect("schema version after migration"),
+            LATEST_SCHEMA_VERSION
+        );
+        assert_eq!(loaded, snapshot);
+    }
+
+    #[test]
+    fn rejects_future_schema_versions() {
+        let connection = Connection::open_in_memory().expect("in-memory sqlite");
+        configure_connection(&connection).expect("configure connection");
+        set_schema_version(&connection, LATEST_SCHEMA_VERSION + 1).expect("set future schema version");
+
+        let error = run_migrations(&connection).expect_err("reject future schema version");
+        assert!(
+            error.contains("newer than this build supports"),
+            "unexpected error: {error}"
+        );
     }
 }
 
