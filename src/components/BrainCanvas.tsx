@@ -1,5 +1,27 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { BrainNode, Space } from '../types';
+import {
+  buildPath,
+  buildSimNodes,
+  CENTER_PULL,
+  clamp,
+  DAMPING,
+  FAR_ATTRACTION_RADIUS,
+  FAR_ATTRACTION_STRENGTH,
+  findSpawnPosition,
+  MAX_SPEED,
+  mergeSimNodes,
+  MIN_MOVEMENT,
+  OVERLAP_DISTANCE,
+  OVERLAP_PUSH,
+  REPULSION_RADIUS,
+  REPULSION_STRENGTH,
+  samePositions,
+  separationVector,
+  type SimNode,
+  SPRING_LENGTH,
+  SPRING_STRENGTH,
+} from '../lib/brainPhysics';
 
 type BrainCanvasProps = {
   editingNodeId: string | null;
@@ -16,17 +38,11 @@ type BrainCanvasProps = {
   space: Space;
 };
 
-type SimNode = {
-  id: string;
-  label: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-};
-
 type DragState = {
   nodeId: string;
+  startX: number;
+  startY: number;
+  started: boolean;
 };
 
 type PanState = {
@@ -36,136 +52,9 @@ type PanState = {
   originY: number;
 };
 
-const NODE_RADIUS = 22;
 const LABEL_OFFSET = 18;
-const REPULSION_STRENGTH = 6200;
-const REPULSION_RADIUS = 190;
-const FAR_ATTRACTION_STRENGTH = 0.0009;
-const FAR_ATTRACTION_RADIUS = 360;
-const SPRING_STRENGTH = 0.012;
-const SPRING_LENGTH = 168;
-const DAMPING = 0.78;
-const CENTER_PULL = 0;
-const MAX_SPEED = 18;
-const MIN_MOVEMENT = 0.004;
 const PERSIST_DEBOUNCE_MS = 220;
-const OVERLAP_DISTANCE = 36;
-const OVERLAP_PUSH = 1.4;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function buildPath(source: SimNode, target: SimNode): string {
-  const dx = target.x - source.x;
-  const curve = Math.max(40, Math.abs(dx) * 0.28);
-  const offset = dx >= 0 ? curve : -curve;
-
-  return `M ${source.x} ${source.y} C ${source.x + offset} ${source.y}, ${target.x - offset} ${target.y}, ${target.x} ${target.y}`;
-}
-
-function separationVector(a: SimNode, b: SimNode, fallbackSeed: number): [number, number] {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const distance = Math.sqrt(dx * dx + dy * dy);
-
-  if (distance > 0.0001) {
-    return [dx / distance, dy / distance];
-  }
-
-  const angle = fallbackSeed * 2.399963229728653;
-  return [Math.cos(angle), Math.sin(angle)];
-}
-
-function buildSimNodes(space: Space): SimNode[] {
-  return space.nodes.map((node) => ({
-    id: node.id,
-    label: node.data.label,
-    x: node.position.x,
-    y: node.position.y,
-    vx: 0,
-    vy: 0,
-  }));
-}
-
-function mergeSimNodes(previous: SimNode[], space: Space): SimNode[] {
-  const previousById = new Map(previous.map((node) => [node.id, node]));
-
-  return space.nodes.map((node) => {
-    const existing = previousById.get(node.id);
-    if (!existing) {
-      return {
-        id: node.id,
-        label: node.data.label,
-        x: node.position.x,
-        y: node.position.y,
-        vx: 0,
-        vy: 0,
-      };
-    }
-
-    return {
-      ...existing,
-      label: node.data.label,
-    };
-  });
-}
-
-function samePositions(a: SimNode[], b: SimNode[]): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-
-  return a.every((node, index) => {
-    const other = b[index];
-    return other && node.id === other.id && node.x === other.x && node.y === other.y;
-  });
-}
-
-function findSpawnPosition(
-  nodes: SimNode[],
-  viewport: Space['viewport'],
-  shell: HTMLDivElement | null,
-): { x: number; y: number } {
-  if (!shell) {
-    return { x: 220, y: 180 };
-  }
-
-  const rect = shell.getBoundingClientRect();
-  const centerX = (rect.width / 2 - viewport.x) / viewport.zoom;
-  const centerY = (rect.height / 2 - viewport.y) / viewport.zoom;
-  const offsets: Array<[number, number]> = [
-    [0, 0],
-    [84, 0],
-    [-84, 0],
-    [0, 84],
-    [0, -84],
-    [72, 72],
-    [-72, 72],
-    [72, -72],
-    [-72, -72],
-    [132, 0],
-    [0, 132],
-    [-132, 0],
-    [0, -132],
-  ];
-
-  for (const [dx, dy] of offsets) {
-    const x = centerX + dx;
-    const y = centerY + dy;
-    const overlaps = nodes.some((node) => {
-      const offsetX = node.x - x;
-      const offsetY = node.y - y;
-      return Math.sqrt(offsetX * offsetX + offsetY * offsetY) < 76;
-    });
-
-    if (!overlaps) {
-      return { x, y };
-    }
-  }
-
-  return { x: centerX + 160, y: centerY + 64 };
-}
+const DRAG_START_DISTANCE = 4;
 
 export function BrainCanvas({
   editingNodeId,
@@ -182,6 +71,7 @@ export function BrainCanvas({
   space,
 }: BrainCanvasProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [isConnectMode, setIsConnectMode] = useState(false);
   const [isInfoMultiSelect, setIsInfoMultiSelect] = useState(false);
   const [infoSelection, setInfoSelection] = useState<string[]>([]);
   const [simNodes, setSimNodes] = useState<SimNode[]>(() => buildSimNodes(space));
@@ -405,12 +295,32 @@ export function BrainCanvas({
       const nextY =
         (event.clientY - rect.top - space.viewport.y) / space.viewport.zoom;
 
+      const dx = event.clientX - dragState.startX;
+      const dy = event.clientY - dragState.startY;
+      const shouldStartDrag =
+        dragState.started || Math.sqrt(dx * dx + dy * dy) >= DRAG_START_DISTANCE;
+
+      if (!dragState.started && shouldStartDrag) {
+        setDragState((current) => (current ? { ...current, started: true } : current));
+        setSelectedNodeId(dragState.nodeId);
+        suppressClickRef.current = true;
+      }
+
+      if (!shouldStartDrag) {
+        return;
+      }
+
       dragPointerRef.current = { x: nextX, y: nextY };
     };
 
     const handleEnd = () => {
+      const wasDragging = dragState.started;
       setDragState(null);
       dragPointerRef.current = null;
+
+      if (!wasDragging) {
+        return;
+      }
 
       if (persistTimerRef.current !== null) {
         window.clearTimeout(persistTimerRef.current);
@@ -622,6 +532,18 @@ export function BrainCanvas({
           </button>
           {isEditMode ? (
             <button
+              className={`button ${isConnectMode ? 'button--accent' : ''}`}
+              onClick={() => {
+                setIsConnectMode((current) => !current);
+                setSelectedNodeId(null);
+              }}
+              type="button"
+            >
+              {isConnectMode ? 'Link Mode On' : 'Link Mode Off'}
+            </button>
+          ) : null}
+          {isEditMode ? (
+            <button
               className="button button--accent"
               onClick={() => {
                 const shell = shellRef.current;
@@ -649,7 +571,10 @@ export function BrainCanvas({
                 }
 
                 const nextNode = onAddNeuron(
-                  findSpawnPosition(simNodesRef.current, effectiveViewport, shell),
+                  findSpawnPosition(simNodesRef.current, effectiveViewport, {
+                    width: shell.clientWidth,
+                    height: shell.clientHeight,
+                  }),
                 );
                 if (nextNode) {
                   setSelectedNodeId(nextNode.id);
@@ -851,8 +776,10 @@ export function BrainCanvas({
                 onPointerDown={(event) => {
                   event.stopPropagation();
                   commitTrackedViewportAndClear();
+                  if (isConnectMode) {
+                    return;
+                  }
                   setSelectedNodeId(node.id);
-                  suppressClickRef.current = true;
                   const shell = shellRef.current;
                   if (!shell) {
                     return;
@@ -865,6 +792,9 @@ export function BrainCanvas({
                   };
                   setDragState({
                     nodeId: node.id,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    started: false,
                   });
                 }}
                 style={{
@@ -884,7 +814,7 @@ export function BrainCanvas({
                     }
 
                     if (selectedNodeId && selectedNodeId !== node.id) {
-                      if (isEditMode) {
+                      if (isEditMode && isConnectMode) {
                         onToggleConnection(selectedNodeId, node.id);
                       }
                       setSelectedNodeId(null);
@@ -930,7 +860,7 @@ export function BrainCanvas({
                       }
 
                       if (selectedNodeId && selectedNodeId !== node.id) {
-                        if (isEditMode) {
+                        if (isEditMode && isConnectMode) {
                           onToggleConnection(selectedNodeId, node.id);
                         }
                         setSelectedNodeId(null);

@@ -18,7 +18,6 @@ export function SpaceSidebar({
   activeSpaceId,
   activeSpaceName,
   theme,
-  saveLabel,
   onSelectSpace,
   onCreateSpace,
   onRenameActiveSpace,

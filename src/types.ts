@@ -1,5 +1,3 @@
-import type { Edge, Node } from '@xyflow/react';
-
 export type ThemeMode = 'light' | 'dark';
 
 export type ViewportState = {
@@ -16,8 +14,22 @@ export type BrainNodeData = {
   isEditing?: boolean;
 };
 
-export type BrainNode = Node<BrainNodeData>;
-export type BrainEdge = Edge;
+export type BrainNode = {
+  id: string;
+  type?: string;
+  position: {
+    x: number;
+    y: number;
+  };
+  data: BrainNodeData;
+};
+
+export type BrainEdge = {
+  id: string;
+  source: string;
+  target: string;
+  type?: string;
+};
 
 export type TodoItem = {
   id: string;
