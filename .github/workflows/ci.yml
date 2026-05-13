@@ -52,7 +52,8 @@ jobs:
             libxdo-dev \
             libssl-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            xvfb
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -102,7 +103,7 @@ jobs:
         env:
           WHYBRARY_TAURI_SMOKE: "1"
           WHYBRARY_APP_DATA_DIR: ${{ github.workspace }}/src-tauri/target/ci-smoke/whybrary
-        run: cargo run --manifest-path src-tauri/Cargo.toml
+        run: xvfb-run -a cargo run --manifest-path src-tauri/Cargo.toml
 
       - name: Assert smoke report and sqlite file
         shell: bash
