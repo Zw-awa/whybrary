@@ -140,6 +140,80 @@ describe('App integration', () => {
     expect((saveSnapshotMock.mock.calls[0]?.[0] as AppSnapshot).theme).toBe('light');
   });
 
+  it('exports the current snapshot as json', async () => {
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn().mockReturnValue('blob:whybrary'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    const createObjectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:whybrary');
+    const revokeObjectUrlSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export JSON' }));
+
+    expect(createObjectUrlSpy).toHaveBeenCalledOnce();
+    expect(clickSpy).toHaveBeenCalledOnce();
+    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:whybrary');
+  });
+
+  it('imports a snapshot from json', async () => {
+    const imported = {
+      ...makeSnapshot(),
+      spaces: [
+        {
+          ...makeSnapshot().spaces[0],
+          id: 'space-2',
+          name: 'Imported Space',
+        },
+      ],
+      activeSpaceId: 'space-2',
+    };
+
+    const file = new File([JSON.stringify(imported)], 'whybrary.json', {
+      type: 'application/json',
+    });
+    Object.defineProperty(file, 'text', {
+      configurable: true,
+      value: vi.fn().mockResolvedValue(JSON.stringify(imported)),
+    });
+
+    const clickMock = vi.fn(function click(this: HTMLInputElement) {
+      Object.defineProperty(this, 'files', {
+        configurable: true,
+        value: [file],
+      });
+      this.onchange?.(new Event('change'));
+    });
+
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+    const originalCreateElement = document.createElement.bind(document);
+    const createElementSpy = vi.spyOn(document, 'createElement');
+    createElementSpy.mockImplementation(((tagName: string) => {
+      const element = originalCreateElement(tagName);
+      if (tagName === 'input') {
+        Object.defineProperty(element, 'click', {
+          configurable: true,
+          value: clickMock,
+        });
+      }
+      return element;
+    }) as typeof document.createElement);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import JSON' }));
+
+    expect(await screen.findByRole('heading', { name: 'Imported Space' })).toBeTruthy();
+    expect(clickMock).toHaveBeenCalledOnce();
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
   it('creates, renames, switches spaces, and debounces the saved snapshot', async () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });

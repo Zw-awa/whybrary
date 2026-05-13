@@ -10,6 +10,11 @@ import {
   nowIso,
 } from './lib/defaults';
 import { loadSnapshot, saveSnapshot } from './lib/persistence';
+import {
+  buildSnapshotFilename,
+  parseSnapshot,
+  serializeSnapshot,
+} from './lib/snapshotTransfer';
 import type { AppSnapshot, BrainNode, Space } from './types';
 
 function saveStatusLabel(status: 'booting' | 'saving' | 'saved' | 'error'): string {
@@ -130,6 +135,49 @@ export default function App() {
       ...current,
       theme: current.theme === 'dark' ? 'light' : 'dark',
     }));
+  };
+
+  const handleExportSnapshot = () => {
+    const blob = new Blob([serializeSnapshot(snapshot)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = buildSnapshotFilename();
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportSnapshot = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      try {
+        const raw = await file.text();
+        const imported = parseSnapshot(raw);
+
+        startTransition(() => {
+          setEditingNodeId(null);
+          setIsMapEditing(false);
+          setSnapshot({
+            ...imported,
+            lastOpenedAt: nowIso(),
+          });
+          setHydrated(true);
+          setSaveStatus('saved');
+        });
+      } catch (error) {
+        console.warn('Failed to import snapshot JSON.', error);
+        window.alert('Import failed. Please choose a valid Whybrary JSON snapshot.');
+      }
+    };
+
+    input.click();
   };
 
   const handleSelectSpace = (spaceId: string) => {
@@ -378,6 +426,8 @@ export default function App() {
         activeSpaceName={activeSpace.name}
         onCreateSpace={handleCreateSpace}
         onDeleteActiveSpace={handleDeleteActiveSpace}
+        onExportSnapshot={handleExportSnapshot}
+        onImportSnapshot={handleImportSnapshot}
         onRenameActiveSpace={handleRenameActiveSpace}
         onSelectSpace={handleSelectSpace}
         onToggleTheme={handleToggleTheme}

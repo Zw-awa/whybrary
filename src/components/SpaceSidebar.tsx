@@ -6,6 +6,8 @@ type SpaceSidebarProps = {
   activeSpaceName: string;
   theme: ThemeMode;
   saveLabel: string;
+  onExportSnapshot: () => void;
+  onImportSnapshot: () => void;
   onSelectSpace: (spaceId: string) => void;
   onCreateSpace: () => void;
   onRenameActiveSpace: (nextName: string) => void;
@@ -18,6 +20,8 @@ export function SpaceSidebar({
   activeSpaceId,
   activeSpaceName,
   theme,
+  onExportSnapshot,
+  onImportSnapshot,
   onSelectSpace,
   onCreateSpace,
   onRenameActiveSpace,
@@ -35,6 +39,12 @@ export function SpaceSidebar({
       <div className="sidebar__controls">
         <button className="button button--accent" onClick={onCreateSpace} type="button">
           New Space
+        </button>
+        <button className="button button--ghost" onClick={onExportSnapshot} type="button">
+          Export JSON
+        </button>
+        <button className="button button--ghost" onClick={onImportSnapshot} type="button">
+          Import JSON
         </button>
         <button className="button button--ghost" onClick={onToggleTheme} type="button">
           {theme === 'dark' ? 'Use Light Theme' : 'Use Dark Theme'}
