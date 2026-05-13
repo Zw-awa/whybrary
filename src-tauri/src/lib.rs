@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS todos (
 );
 "#;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct ViewportState {
     x: f64,
@@ -62,20 +62,20 @@ struct ViewportState {
     zoom: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct BrainNodePosition {
     x: f64,
     y: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct BrainNodeData {
     label: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct BrainNode {
     id: String,
@@ -83,7 +83,7 @@ struct BrainNode {
     data: BrainNodeData,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct BrainEdge {
     id: String,
@@ -91,7 +91,7 @@ struct BrainEdge {
     target: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct TodoItem {
     id: String,
@@ -101,7 +101,7 @@ struct TodoItem {
     updated_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct Space {
     id: String,
@@ -114,13 +114,19 @@ struct Space {
     updated_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct AppSnapshot {
     theme: String,
     spaces: Vec<Space>,
     active_space_id: Option<String>,
     last_opened_at: String,
+}
+
+fn initialize_schema(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(INIT_SQL)
+        .map_err(|error| format!("Unable to initialize SQLite schema: {error}"))
 }
 
 fn app_db_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -140,9 +146,7 @@ fn open_connection(app: &AppHandle) -> Result<Connection, String> {
     let db_path = app_db_path(app)?;
     let connection = Connection::open(db_path).map_err(|error| format!("Unable to open SQLite: {error}"))?;
 
-    connection
-        .execute_batch(INIT_SQL)
-        .map_err(|error| format!("Unable to initialize SQLite schema: {error}"))?;
+    initialize_schema(&connection)?;
 
     Ok(connection)
 }
@@ -243,10 +247,7 @@ fn load_todos(connection: &Connection, space_id: &str) -> Result<Vec<TodoItem>, 
     Ok(todos)
 }
 
-#[tauri::command]
-fn load_snapshot(app: AppHandle) -> Result<AppSnapshot, String> {
-    let connection = open_connection(&app)?;
-
+fn load_snapshot_from_connection(connection: &Connection) -> Result<AppSnapshot, String> {
     let theme = load_setting(&connection, "theme")?.unwrap_or_else(|| "dark".to_string());
     let active_space_id = load_setting(&connection, "activeSpaceId")?;
     let last_opened_at = load_setting(&connection, "lastOpenedAt")?.unwrap_or_default();
@@ -307,9 +308,7 @@ fn load_snapshot(app: AppHandle) -> Result<AppSnapshot, String> {
     })
 }
 
-#[tauri::command]
-fn save_snapshot(app: AppHandle, snapshot: AppSnapshot) -> Result<(), String> {
-    let mut connection = open_connection(&app)?;
+fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapshot) -> Result<(), String> {
     let transaction = connection
         .transaction()
         .map_err(|error| format!("Unable to open SQLite transaction: {error}"))?;
@@ -432,6 +431,176 @@ fn save_snapshot(app: AppHandle, snapshot: AppSnapshot) -> Result<(), String> {
         .map_err(|error| format!("Unable to commit SQLite transaction: {error}"))?;
 
     Ok(())
+}
+
+#[tauri::command]
+fn load_snapshot(app: AppHandle) -> Result<AppSnapshot, String> {
+    let connection = open_connection(&app)?;
+    load_snapshot_from_connection(&connection)
+}
+
+#[tauri::command]
+fn save_snapshot(app: AppHandle, snapshot: AppSnapshot) -> Result<(), String> {
+    let mut connection = open_connection(&app)?;
+    save_snapshot_to_connection(&mut connection, &snapshot)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn open_test_connection() -> Connection {
+        let connection = Connection::open_in_memory().expect("in-memory sqlite");
+        initialize_schema(&connection).expect("initialize schema");
+        connection
+    }
+
+    fn make_snapshot() -> AppSnapshot {
+        AppSnapshot {
+            theme: "light".to_string(),
+            active_space_id: Some("space-1".to_string()),
+            last_opened_at: "2026-01-01T00:00:00.000Z".to_string(),
+            spaces: vec![Space {
+                id: "space-1".to_string(),
+                name: "Space One".to_string(),
+                nodes: vec![
+                    BrainNode {
+                        id: "node-a".to_string(),
+                        position: BrainNodePosition { x: 120.0, y: 180.0 },
+                        data: BrainNodeData {
+                            label: "Why".to_string(),
+                        },
+                    },
+                    BrainNode {
+                        id: "node-b".to_string(),
+                        position: BrainNodePosition { x: 340.0, y: 240.0 },
+                        data: BrainNodeData {
+                            label: "Because".to_string(),
+                        },
+                    },
+                ],
+                edges: vec![BrainEdge {
+                    id: "edge-1".to_string(),
+                    source: "node-a".to_string(),
+                    target: "node-b".to_string(),
+                }],
+                todos: vec![
+                    TodoItem {
+                        id: "todo-1".to_string(),
+                        text: "Write the reason".to_string(),
+                        completed: false,
+                        created_at: "2026-01-01T00:00:00.000Z".to_string(),
+                        updated_at: "2026-01-01T00:00:00.000Z".to_string(),
+                    },
+                    TodoItem {
+                        id: "todo-2".to_string(),
+                        text: "Connect the idea".to_string(),
+                        completed: true,
+                        created_at: "2026-01-02T00:00:00.000Z".to_string(),
+                        updated_at: "2026-01-02T00:00:00.000Z".to_string(),
+                    },
+                ],
+                viewport: ViewportState {
+                    x: 12.5,
+                    y: -4.0,
+                    zoom: 0.95,
+                },
+                created_at: "2026-01-01T00:00:00.000Z".to_string(),
+                updated_at: "2026-01-03T00:00:00.000Z".to_string(),
+            }],
+        }
+    }
+
+    fn make_replacement_snapshot() -> AppSnapshot {
+        AppSnapshot {
+            theme: "dark".to_string(),
+            active_space_id: None,
+            last_opened_at: "2026-02-01T00:00:00.000Z".to_string(),
+            spaces: vec![Space {
+                id: "space-2".to_string(),
+                name: "Space Two".to_string(),
+                nodes: vec![BrainNode {
+                    id: "node-c".to_string(),
+                    position: BrainNodePosition { x: 40.0, y: 80.0 },
+                    data: BrainNodeData {
+                        label: "Focus".to_string(),
+                    },
+                }],
+                edges: vec![],
+                todos: vec![TodoItem {
+                    id: "todo-3".to_string(),
+                    text: "Keep it simple".to_string(),
+                    completed: false,
+                    created_at: "2026-02-01T00:00:00.000Z".to_string(),
+                    updated_at: "2026-02-01T00:00:00.000Z".to_string(),
+                }],
+                viewport: ViewportState {
+                    x: -20.0,
+                    y: 30.0,
+                    zoom: 1.1,
+                },
+                created_at: "2026-02-01T00:00:00.000Z".to_string(),
+                updated_at: "2026-02-02T00:00:00.000Z".to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn loads_empty_snapshot_from_fresh_db() {
+        let connection = open_test_connection();
+        let snapshot = load_snapshot_from_connection(&connection).expect("load snapshot");
+
+        assert_eq!(
+            snapshot,
+            AppSnapshot {
+                theme: "dark".to_string(),
+                spaces: vec![],
+                active_space_id: None,
+                last_opened_at: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn round_trips_snapshot_through_sqlite() {
+        let mut connection = open_test_connection();
+        let snapshot = make_snapshot();
+
+        save_snapshot_to_connection(&mut connection, &snapshot).expect("save snapshot");
+        let loaded = load_snapshot_from_connection(&connection).expect("load snapshot");
+
+        assert_eq!(loaded, snapshot);
+    }
+
+    #[test]
+    fn replacing_snapshot_clears_stale_rows_and_settings() {
+        let mut connection = open_test_connection();
+        let original = make_snapshot();
+        let replacement = make_replacement_snapshot();
+
+        save_snapshot_to_connection(&mut connection, &original).expect("save original snapshot");
+        save_snapshot_to_connection(&mut connection, &replacement).expect("save replacement snapshot");
+        let loaded = load_snapshot_from_connection(&connection).expect("load replacement snapshot");
+
+        assert_eq!(loaded, replacement);
+        assert_eq!(loaded.spaces.len(), 1);
+        assert_eq!(loaded.spaces[0].nodes.len(), 1);
+        assert_eq!(loaded.spaces[0].edges.len(), 0);
+        assert_eq!(loaded.spaces[0].todos.len(), 1);
+        assert_eq!(loaded.active_space_id, None);
+    }
+
+    #[test]
+    fn save_without_active_space_removes_active_space_setting() {
+        let mut connection = open_test_connection();
+        let mut snapshot = make_snapshot();
+        snapshot.active_space_id = None;
+
+        save_snapshot_to_connection(&mut connection, &snapshot).expect("save snapshot");
+
+        let active_space = load_setting(&connection, "activeSpaceId").expect("load active space setting");
+        assert_eq!(active_space, None);
+    }
 }
 
 pub fn run() {
