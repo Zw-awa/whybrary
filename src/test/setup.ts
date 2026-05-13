@@ -1,8 +1,28 @@
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
+const frameQueue: FrameRequestCallback[] = [];
+let nextFrameId = 1;
+
+export function flushAnimationFrame(count = 1) {
+  for (let index = 0; index < count; index += 1) {
+    const callback = frameQueue.shift();
+    if (!callback) {
+      return;
+    }
+
+    callback(performance.now());
+  }
+}
+
+export function clearAnimationFrames() {
+  frameQueue.length = 0;
+}
+
 afterEach(() => {
   cleanup();
+  clearAnimationFrames();
+  vi.useRealTimers();
 });
 
 Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
@@ -35,5 +55,11 @@ HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
   } as DOMRect;
 };
 
-vi.stubGlobal('requestAnimationFrame', () => 1);
+vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+  frameQueue.push(callback);
+  const currentId = nextFrameId;
+  nextFrameId += 1;
+  return currentId;
+});
 vi.stubGlobal('cancelAnimationFrame', () => undefined);
+vi.stubGlobal('PointerEvent', MouseEvent);

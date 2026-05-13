@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  A personal desktop app for keeping your own "why" visible through a simple mind map and a lightweight To-Do list.
+  A local-first desktop app for keeping your own "why" visible through a mind map and a lightweight To-Do list.
 </p>
 
 ## Overview
@@ -28,16 +28,36 @@ Whybrary is built for one person, on one machine, with one goal: keep your reaso
 
 Instead of mixing long notes, bookmarks, and task clutter, Whybrary keeps things narrow:
 
-- a visual mind map for connecting motivations, reasons, and directions
+- a local mind map for connecting motivations, reasons, and directions
 - a compact To-Do list for turning those reasons into small, checkable actions
 
-## What You Can Do
+## Current Capabilities
 
-- Create multiple independent spaces
-- Build a local mind map by adding and connecting points
+- Create and switch between multiple spaces
+- Add nodes locally and place new nodes near the current viewport center
+- Drag nodes and persist their positions
+- Pan and zoom the map viewport
+- Toggle explicit link mode before connecting two nodes
+- Open the info panel to inspect node positions and link counts
+- Track a node from the info panel so the viewport centers on it
+- Enable multi-select, select all, and batch delete from the info panel
+- Delete the current selection with the keyboard
 - Keep short single-line To-Do items beside the map
 - Switch between light and dark themes
-- Work entirely offline
+- Work entirely offline with local SQLite persistence
+
+## Engineering Status
+
+Whybrary is usable and under active refinement.
+
+- Frontend: React + TypeScript
+- Desktop shell: Tauri v2
+- Persistence: local SQLite snapshot storage
+- Graph rendering: local DOM + SVG + in-app force simulation
+- Quality gates currently expected on each change:
+  - `npm run lint`
+  - `npm run test`
+  - `npm run build`
 
 ## Privacy
 
@@ -47,16 +67,19 @@ Instead of mixing long notes, bookmarks, and task clutter, Whybrary keeps things
 - No required network connection
 - Your data stays on your device
 
-## Current Status
-
-Whybrary is in active early development. The desktop app is already usable, and the interface is being refined step by step.
-
 ## Run From Source
-
-If you want to try the project locally:
 
 ```bash
 npm install
+npm run tauri dev
+```
+
+## Useful Scripts
+
+```bash
+npm run lint
+npm run test
+npm run build
 npm run tauri dev
 ```
 
