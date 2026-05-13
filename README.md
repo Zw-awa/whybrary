@@ -110,6 +110,8 @@ It then creates a draft GitHub release and builds desktop bundles for:
 - Linux: `appimage`, `deb`
 - Windows: `nsis`
 
+Signing and notarization hardening is partially prepared in the workflow, but still depends on repository secrets and platform certificates.
+
 ## Privacy
 
 - No account

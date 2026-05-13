@@ -110,6 +110,8 @@ git push origin v0.2.0
 - Linux：`appimage`、`deb`
 - Windows：`nsis`
 
+签名与 notarization 的 workflow 加固已经有第一版准备，但真正启用仍依赖仓库 secrets 与平台证书。
+
 ## 隐私
 
 - 没有账号
