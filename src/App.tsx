@@ -10,6 +10,7 @@ import {
   nowIso,
 } from './lib/defaults';
 import { loadSnapshot, saveSnapshot } from './lib/persistence';
+import { clearPreviewSnapshot } from './lib/persistence';
 import {
   buildSnapshotFilename,
   parseSnapshot,
@@ -32,12 +33,19 @@ function saveStatusLabel(status: 'booting' | 'saving' | 'saved' | 'error'): stri
   }
 }
 
+function isWebPreview(): boolean {
+  return typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window);
+}
+
 export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(() => buildDefaultState());
   const [hydrated, setHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'booting' | 'saving' | 'saved' | 'error'>('booting');
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [isMapEditing, setIsMapEditing] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [bannerMessage, setBannerMessage] = useState<string | null>(null);
+  const webPreview = isWebPreview();
 
   const activeSpace =
     snapshot.spaces.find((space) => space.id === snapshot.activeSpaceId) ?? snapshot.spaces[0];
@@ -66,6 +74,7 @@ export default function App() {
           setSnapshot(normalizeSnapshot(loaded));
           setHydrated(true);
           setSaveStatus('saved');
+          setShowWelcome(webPreview);
         });
       })
       .catch(() => {
@@ -78,6 +87,7 @@ export default function App() {
           setSnapshot(fallback);
           setHydrated(true);
           setSaveStatus('error');
+          setShowWelcome(webPreview);
         });
       });
 
@@ -89,6 +99,15 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = snapshot.theme;
   }, [snapshot.theme]);
+
+  useEffect(() => {
+    if (!bannerMessage) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setBannerMessage(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [bannerMessage]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -138,6 +157,7 @@ export default function App() {
   };
 
   const handleExportSnapshot = () => {
+    setShowWelcome(false);
     const blob = new Blob([serializeSnapshot(snapshot)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -145,6 +165,7 @@ export default function App() {
     anchor.download = buildSnapshotFilename();
     anchor.click();
     URL.revokeObjectURL(url);
+    setBannerMessage('Snapshot exported as JSON.');
   };
 
   const handleImportSnapshot = () => {
@@ -164,12 +185,14 @@ export default function App() {
         startTransition(() => {
           setEditingNodeId(null);
           setIsMapEditing(false);
+          setShowWelcome(false);
           setSnapshot({
             ...imported,
             lastOpenedAt: nowIso(),
           });
           setHydrated(true);
           setSaveStatus('saved');
+          setBannerMessage('Snapshot imported successfully.');
         });
       } catch (error) {
         console.warn('Failed to import snapshot JSON.', error);
@@ -178,6 +201,25 @@ export default function App() {
     };
 
     input.click();
+  };
+
+  const handleResetPreviewData = () => {
+    const confirmed = window.confirm(
+      'Clear the browser-local Whybrary snapshot and replace it with a fresh default space?',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const fallback = buildDefaultState();
+    clearPreviewSnapshot();
+    setEditingNodeId(null);
+    setIsMapEditing(false);
+    setShowWelcome(webPreview);
+    setSnapshot(fallback);
+    setHydrated(true);
+    setSaveStatus('saved');
+    setBannerMessage('Browser-local snapshot reset.');
   };
 
   const handleSelectSpace = (spaceId: string) => {
@@ -192,6 +234,7 @@ export default function App() {
   const handleCreateSpace = () => {
     setIsMapEditing(false);
     setEditingNodeId(null);
+    setShowWelcome(false);
     updateSnapshot((current) => {
       const nextSpace = createSpace(`Space ${current.spaces.length + 1}`);
 
@@ -428,6 +471,7 @@ export default function App() {
         onDeleteActiveSpace={handleDeleteActiveSpace}
         onExportSnapshot={handleExportSnapshot}
         onImportSnapshot={handleImportSnapshot}
+        onResetPreviewData={handleResetPreviewData}
         onRenameActiveSpace={handleRenameActiveSpace}
         onSelectSpace={handleSelectSpace}
         onToggleTheme={handleToggleTheme}
@@ -440,8 +484,15 @@ export default function App() {
         <header className="workspace__header">
           <div>
             <h2>{activeSpace.name || 'Untitled Space'}</h2>
+            {webPreview ? (
+              <p className="workspace__subhead">
+                Web preview mode. Your data stays in this browser unless you export JSON.
+              </p>
+            ) : null}
           </div>
         </header>
+
+        {bannerMessage ? <div className="workspace__banner">{bannerMessage}</div> : null}
 
         <div className="workspace__grid">
           <WhyTodoPanel
@@ -470,6 +521,55 @@ export default function App() {
             space={activeSpace}
           />
         </div>
+
+        {showWelcome ? (
+          <section className="welcome-panel" role="region" aria-label="Whybrary web welcome">
+            <div className="welcome-panel__card">
+              <p className="eyebrow">Whybrary on the web</p>
+              <h3>Try it in the browser, then carry your graph with you.</h3>
+              <p>
+                This Pages version is meant for quick use, easy sharing, and JSON import/export.
+                Nothing is uploaded. Your preview data stays in this browser unless you export it.
+              </p>
+
+              <div className="welcome-panel__actions">
+                <button className="button button--accent" onClick={() => setShowWelcome(false)} type="button">
+                  Start Editing
+                </button>
+                <button className="button" onClick={handleImportSnapshot} type="button">
+                  Import Existing JSON
+                </button>
+                <button className="button" onClick={handleExportSnapshot} type="button">
+                  Export Current JSON
+                </button>
+              </div>
+
+              <div className="welcome-panel__notes">
+                <div className="welcome-note">
+                  <strong>Fast to try</strong>
+                  <span>Open the page and start editing immediately with no install step.</span>
+                </div>
+                <div className="welcome-note">
+                  <strong>Portable content</strong>
+                  <span>Export one JSON file and re-import it later on the web or desktop app.</span>
+                </div>
+                <div className="welcome-note">
+                  <strong>Signing deferred</strong>
+                  <span>Desktop signing stays intentionally deferred until broader distribution requires it.</span>
+                </div>
+              </div>
+
+              <a
+                className="welcome-panel__link"
+                href="https://github.com/Zw-awa/whybrary/releases"
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open desktop releases
+              </a>
+            </div>
+          </section>
+        ) : null}
       </main>
     </div>
   );

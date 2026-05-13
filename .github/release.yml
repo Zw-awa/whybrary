@@ -1,0 +1,25 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+  categories:
+    - title: Core App
+      labels:
+        - feature
+        - enhancement
+    - title: Persistence and Data
+      labels:
+        - persistence
+        - sqlite
+    - title: Release and Tooling
+      labels:
+        - ci
+        - release
+        - tooling
+    - title: Testing
+      labels:
+        - test
+        - smoke
+    - title: Documentation
+      labels:
+        - docs

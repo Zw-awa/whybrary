@@ -31,7 +31,7 @@ vi.mock('./defaults', () => ({
   buildDefaultState: vi.fn(() => defaultSnapshot),
 }));
 
-import { loadSnapshot, saveSnapshot } from './persistence';
+import { clearPreviewSnapshot, loadSnapshot, saveSnapshot } from './persistence';
 
 const previewSnapshot: AppSnapshot = {
   theme: 'light',
@@ -115,5 +115,11 @@ describe('persistence', () => {
     expect(window.localStorage.getItem('whybrary.preview.snapshot')).toBe(
       JSON.stringify(previewSnapshot),
     );
+  });
+
+  it('clears the preview snapshot from local storage', () => {
+    window.localStorage.setItem('whybrary.preview.snapshot', JSON.stringify(previewSnapshot));
+    clearPreviewSnapshot();
+    expect(window.localStorage.getItem('whybrary.preview.snapshot')).toBeNull();
   });
 });

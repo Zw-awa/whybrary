@@ -3,14 +3,16 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSnapshot } from './types';
 
-const { loadSnapshotMock, saveSnapshotMock } = vi.hoisted(() => ({
+const { loadSnapshotMock, saveSnapshotMock, clearPreviewSnapshotMock } = vi.hoisted(() => ({
   loadSnapshotMock: vi.fn(),
   saveSnapshotMock: vi.fn(),
+  clearPreviewSnapshotMock: vi.fn(),
 }));
 
 vi.mock('./lib/persistence', () => ({
   loadSnapshot: loadSnapshotMock,
   saveSnapshot: saveSnapshotMock,
+  clearPreviewSnapshot: clearPreviewSnapshotMock,
 }));
 
 vi.mock('./components/BrainCanvas', () => ({
@@ -103,6 +105,7 @@ describe('App integration', () => {
     document.documentElement.dataset.theme = '';
     loadSnapshotMock.mockResolvedValue(makeSnapshot());
     saveSnapshotMock.mockResolvedValue(undefined);
+    clearPreviewSnapshotMock.mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -115,6 +118,7 @@ describe('App integration', () => {
     expect(await screen.findByRole('heading', { name: 'Loaded Space' })).toBeTruthy();
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(screen.getByRole('button', { name: 'Use Light Theme' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Whybrary web welcome' })).toBeTruthy();
   });
 
   it('falls back to the default state when snapshot loading fails', async () => {
@@ -159,6 +163,7 @@ describe('App integration', () => {
     expect(createObjectUrlSpy).toHaveBeenCalledOnce();
     expect(clickSpy).toHaveBeenCalledOnce();
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:whybrary');
+    expect(screen.getByText('Snapshot exported as JSON.')).toBeTruthy();
   });
 
   it('imports a snapshot from json', async () => {
@@ -212,6 +217,29 @@ describe('App integration', () => {
     expect(await screen.findByRole('heading', { name: 'Imported Space' })).toBeTruthy();
     expect(clickMock).toHaveBeenCalledOnce();
     expect(alertSpy).not.toHaveBeenCalled();
+    expect(screen.getByText('Snapshot imported successfully.')).toBeTruthy();
+  });
+
+  it('dismisses the web welcome panel when editing starts', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+
+    expect(screen.getByRole('region', { name: 'Whybrary web welcome' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Start Editing' }));
+    expect(screen.queryByRole('region', { name: 'Whybrary web welcome' })).toBeNull();
+  });
+
+  it('resets browser-local preview data to a fresh default state', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Browser Data' }));
+
+    expect(await screen.findByRole('heading', { name: 'My First Space' })).toBeTruthy();
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(clearPreviewSnapshotMock).toHaveBeenCalledOnce();
+    expect(screen.getByText('Browser-local snapshot reset.')).toBeTruthy();
   });
 
   it('creates, renames, switches spaces, and debounces the saved snapshot', async () => {

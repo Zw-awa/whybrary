@@ -22,6 +22,11 @@
   一个本地优先的桌面应用，用脑图和轻量 To-Do 清单把自己的“为什么”一直放在眼前。
 </p>
 
+## 在线体验
+
+- GitHub Pages 在线预览：`https://zw-awa.github.io/whybrary/`
+- 当前最推荐的数据迁移方式：导出 / 导入 JSON 快照
+
 ## 项目简介
 
 Whybrary 只为一个人、一台机器、一个目标而做：让你的原因足够清晰，清晰到可以行动。
@@ -45,6 +50,7 @@ Whybrary 只为一个人、一台机器、一个目标而做：让你的原因�
 - 在脑图旁维护简短的单行 To-Do
 - 切换白天与夜晚主题
 - 全程离线，并用本地 SQLite 持久化数据
+- 在浏览器预览版中导入和导出可携带的 JSON 快照
 
 ## 当前工程状态
 
@@ -64,7 +70,7 @@ Whybrary 已经可用，当前仍在持续打磨交互和工程结构。
 
 当前自动化验证分成三层：
 
-- 前端测试：`41` 个 Vitest 用例，覆盖 `App`、`BrainCanvas`、持久化、默认值和力导向逻辑
+- 前端测试：`46` 个 Vitest 用例，覆盖 `App`、`BrainCanvas`、持久化、默认值、快照传输和力导向逻辑
 - Rust 持久化测试：`8` 个 SQLite 相关测试，覆盖空库加载、快照 round-trip、旧数据清理、active space 清理、schema version 初始化、迁移幂等、旧 schema 迁移和未来版本拒绝
 - 真实 Tauri runtime 烟测：单独的 Linux CI job 会在 `xvfb` 下启动真实 Tauri 应用，写入真实 SQLite 文件，生成 smoke report 后退出
 
@@ -74,6 +80,8 @@ Whybrary 已经可用，当前仍在持续打磨交互和工程结构。
   - `web-checks`：lint、test、build
   - `tauri-checks`：`cargo check --tests` 与 `cargo test --lib`
   - `tauri-smoke-linux`：真实 Tauri runtime 烟测
+- `pages.yml`
+  - 构建并部署 GitHub Pages 浏览器预览版
 - `release.yml`
   - 基于版本校验的桌面打包发布
 
@@ -112,6 +120,8 @@ git push origin v0.2.0
 
 签名与 notarization 的 workflow 加固已经有第一版准备，但真正启用仍依赖仓库 secrets 与平台证书。
 
+当前策略是：在多人分发或明确的信任要求出现之前，先刻意延后签名体系接入，避免过早引入成本、流程复杂度与身份暴露问题。
+
 ## 隐私
 
 - 没有账号
@@ -119,6 +129,7 @@ git push origin v0.2.0
 - 没有上传
 - 不依赖联网服务
 - 数据只保留在你的设备上
+- 在 GitHub Pages 预览版中，数据默认只保留在当前浏览器，除非你主动导出 JSON
 
 ## 本地运行源码
 
@@ -144,6 +155,15 @@ npm run tauri dev
 - 生成 `smoke-report.json`
 - 以成功或失败退出码结束
 
+## 浏览器预览版数据流
+
+Web 预览版当前是“快速试用 + JSON 可迁移”的设计：
+
+- 当前数据保存在浏览器 localStorage
+- 可以导出带 metadata 的 JSON 快照
+- 可以导入当前导出格式，也兼容旧的原始 snapshot JSON
+- 提供浏览器本地数据重置入口
+
 ## 常用脚本
 
 ```bash
@@ -152,6 +172,11 @@ npm run test
 npm run build
 npm run tauri dev
 ```
+
+## 发布说明
+
+- 变更记录：[CHANGELOG.md](./CHANGELOG.md)
+- 发布流程：[RELEASING.md](./RELEASING.md)
 
 ## 开源协议
 

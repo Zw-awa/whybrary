@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AppSnapshot } from '../types';
 import { buildDefaultState } from './defaults';
 
-const LOCAL_PREVIEW_KEY = 'whybrary.preview.snapshot';
+export const LOCAL_PREVIEW_KEY = 'whybrary.preview.snapshot';
 
 function hasTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -36,4 +36,8 @@ export async function saveSnapshot(snapshot: AppSnapshot): Promise<void> {
   }
 
   window.localStorage.setItem(LOCAL_PREVIEW_KEY, JSON.stringify(snapshot));
+}
+
+export function clearPreviewSnapshot(): void {
+  window.localStorage.removeItem(LOCAL_PREVIEW_KEY);
 }

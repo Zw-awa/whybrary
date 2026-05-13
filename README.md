@@ -22,6 +22,11 @@
   A local-first desktop app for keeping your own "why" visible through a mind map and a lightweight To-Do list.
 </p>
 
+## Try Online
+
+- GitHub Pages web preview: `https://zw-awa.github.io/whybrary/`
+- Best current portability path: export and import JSON snapshots
+
 ## Overview
 
 Whybrary is built for one person, on one machine, with one goal: keep your reasons clear enough to act on.
@@ -45,6 +50,7 @@ Instead of mixing long notes, bookmarks, and task clutter, Whybrary keeps things
 - Keep short single-line To-Do items beside the map
 - Switch between light and dark themes
 - Work entirely offline with local SQLite persistence
+- Import and export portable JSON snapshots in the browser preview
 
 ## Engineering Status
 
@@ -64,7 +70,7 @@ Whybrary is usable and under active refinement.
 
 Current automated coverage is split across three layers:
 
-- Frontend tests: `41` Vitest cases across `App`, `BrainCanvas`, persistence, defaults, and force simulation
+- Frontend tests: `46` Vitest cases across `App`, `BrainCanvas`, persistence, defaults, snapshot transfer, and force simulation
 - Rust persistence tests: `8` SQLite-focused tests for empty DB load, snapshot round-trip, stale row cleanup, active-space cleanup, schema version initialization, migration idempotence, legacy schema migration, and future-version rejection
 - Real Tauri runtime smoke: a dedicated Linux CI job boots the Tauri app under `xvfb`, writes to a real SQLite file, emits a smoke report, and exits
 
@@ -74,6 +80,8 @@ Current GitHub Actions workflows:
   - `web-checks`: lint, test, build
   - `tauri-checks`: `cargo check --tests` and `cargo test --lib`
   - `tauri-smoke-linux`: real Tauri runtime smoke against a real app data directory
+- `pages.yml`
+  - builds and deploys the browser preview to GitHub Pages
 - `release.yml`
   - version-verified desktop packaging on tag push
 
@@ -112,6 +120,8 @@ It then creates a draft GitHub release and builds desktop bundles for:
 
 Signing and notarization hardening is partially prepared in the workflow, but still depends on repository secrets and platform certificates.
 
+For now, signed desktop distribution is intentionally deferred until broader multi-user distribution or explicit trust requirements make it worth the overhead and identity exposure.
+
 ## Privacy
 
 - No account
@@ -119,6 +129,7 @@ Signing and notarization hardening is partially prepared in the workflow, but st
 - No upload
 - No required network connection
 - Your data stays on your device
+- In the GitHub Pages preview, data stays in your current browser unless you export JSON
 
 ## Run From Source
 
@@ -144,6 +155,15 @@ In smoke mode the app:
 - writes `smoke-report.json`
 - exits with a success or failure code
 
+## Browser Preview Data Flow
+
+The web preview is designed for quick use and easy portability:
+
+- it stores the current snapshot in browser-local storage
+- it can export a JSON snapshot with basic metadata
+- it can import both current export envelopes and legacy raw snapshot JSON
+- it includes a browser-local reset action for clearing preview data
+
 ## Useful Scripts
 
 ```bash
@@ -152,6 +172,11 @@ npm run test
 npm run build
 npm run tauri dev
 ```
+
+## Release Notes
+
+- Changelog: [CHANGELOG.md](./CHANGELOG.md)
+- Release process: [RELEASING.md](./RELEASING.md)
 
 ## License
 

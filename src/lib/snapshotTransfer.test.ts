@@ -27,7 +27,22 @@ describe('snapshotTransfer', () => {
     const snapshot = buildDefaultState();
     const serialized = serializeSnapshot(snapshot);
     const parsed = parseSnapshot(serialized);
+    const envelope = JSON.parse(serialized) as {
+      app: string;
+      formatVersion: number;
+      exportedAt: string;
+      snapshot: unknown;
+    };
 
+    expect(envelope.app).toBe('whybrary');
+    expect(envelope.formatVersion).toBe(1);
+    expect(typeof envelope.exportedAt).toBe('string');
+    expect(parsed).toEqual(snapshot);
+  });
+
+  it('still parses legacy raw snapshot json', () => {
+    const snapshot = buildDefaultState();
+    const parsed = parseSnapshot(JSON.stringify(snapshot));
     expect(parsed).toEqual(snapshot);
   });
 });

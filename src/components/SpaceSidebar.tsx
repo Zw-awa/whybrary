@@ -8,6 +8,7 @@ type SpaceSidebarProps = {
   saveLabel: string;
   onExportSnapshot: () => void;
   onImportSnapshot: () => void;
+  onResetPreviewData: () => void;
   onSelectSpace: (spaceId: string) => void;
   onCreateSpace: () => void;
   onRenameActiveSpace: (nextName: string) => void;
@@ -20,8 +21,10 @@ export function SpaceSidebar({
   activeSpaceId,
   activeSpaceName,
   theme,
+  saveLabel,
   onExportSnapshot,
   onImportSnapshot,
+  onResetPreviewData,
   onSelectSpace,
   onCreateSpace,
   onRenameActiveSpace,
@@ -33,6 +36,7 @@ export function SpaceSidebar({
       <div className="sidebar__brand">
         <div>
           <h1>Whybrary</h1>
+          <p className="sidebar__status-note">{saveLabel}</p>
         </div>
       </div>
 
@@ -45,6 +49,9 @@ export function SpaceSidebar({
         </button>
         <button className="button button--ghost" onClick={onImportSnapshot} type="button">
           Import JSON
+        </button>
+        <button className="button button--ghost" onClick={onResetPreviewData} type="button">
+          Reset Browser Data
         </button>
         <button className="button button--ghost" onClick={onToggleTheme} type="button">
           {theme === 'dark' ? 'Use Light Theme' : 'Use Dark Theme'}

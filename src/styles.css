@@ -101,6 +101,12 @@ button {
   gap: 14px;
 }
 
+.sidebar__status-note {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: color-mix(in srgb, var(--text-inverse) 70%, transparent);
+}
+
 .sidebar h1,
 .loading-card h1,
 .workspace__header h2,
@@ -309,6 +315,21 @@ button {
   display: grid;
   gap: 4px;
   padding: 2px 2px 8px;
+}
+
+.workspace__subhead {
+  margin: 6px 0 0;
+  color: var(--text-soft);
+  font-size: 0.95rem;
+}
+
+.workspace__banner {
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel-strong) 82%, transparent);
+  color: var(--text-main);
+  font-size: 0.9rem;
 }
 
 .workspace__grid {
@@ -772,6 +793,83 @@ button {
   box-shadow: var(--shadow-large);
 }
 
+.welcome-panel {
+  position: absolute;
+  inset: 24px 24px 24px 344px;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 17, 14, 0.2);
+  backdrop-filter: blur(8px);
+  border-radius: 28px;
+  z-index: 8;
+}
+
+.welcome-panel__card {
+  width: min(760px, calc(100vw - 120px));
+  display: grid;
+  gap: 18px;
+  padding: 30px;
+  background:
+    linear-gradient(155deg, color-mix(in srgb, var(--panel-strong) 92%, white), var(--panel-bg));
+  border: 1px solid var(--line-soft);
+  border-radius: 28px;
+  box-shadow: var(--shadow-large);
+}
+
+.welcome-panel__card h3 {
+  margin: 0;
+  font-size: clamp(1.7rem, 2vw, 2.6rem);
+  line-height: 1.05;
+  font-family: 'Bahnschrift', 'Aptos', sans-serif;
+}
+
+.welcome-panel__card p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.welcome-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.welcome-panel__notes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.welcome-note {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel-strong) 80%, transparent);
+}
+
+.welcome-note strong {
+  font-size: 0.95rem;
+}
+
+.welcome-note span {
+  color: var(--text-soft);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.welcome-panel__link {
+  color: var(--accent-strong);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.welcome-panel__link:hover {
+  text-decoration: underline;
+}
+
 @container (max-width: 720px) {
   .panel__header {
     flex-direction: column;
@@ -799,6 +897,19 @@ button {
   }
 
   .workspace__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-panel {
+    inset: 16px;
+  }
+
+  .welcome-panel__card {
+    width: 100%;
+    padding: 22px;
+  }
+
+  .welcome-panel__notes {
     grid-template-columns: 1fr;
   }
 }
