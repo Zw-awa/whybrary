@@ -55,7 +55,6 @@ function normalizeViewport(viewport: ViewportState | null | undefined): Viewport
 export function createNeuronNode(label: string, x: number, y: number): BrainNode {
   return {
     id: crypto.randomUUID(),
-    type: 'neuron',
     position: { x, y },
     data: { label },
   };
@@ -66,7 +65,6 @@ function createEdge(source: string, target: string): BrainEdge {
     id: crypto.randomUUID(),
     source,
     target,
-    type: 'smoothstep',
   };
 }
 
@@ -116,8 +114,11 @@ export function buildDefaultState(): AppSnapshot {
 
 function normalizeSpace(space: Space): Space {
   const rawNodes = (space.nodes ?? []).map((node) => ({
-    ...node,
-    type: node.type ?? 'neuron',
+    id: node.id,
+    position: {
+      x: node.position.x,
+      y: node.position.y,
+    },
     data: {
       label: node.data?.label?.trim() || 'Untitled',
     },
@@ -139,8 +140,9 @@ function normalizeSpace(space: Space): Space {
       },
     })),
     edges: (space.edges ?? []).map((edge) => ({
-      ...edge,
-      type: edge.type ?? 'smoothstep',
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
     })),
     todos: (space.todos ?? []).map((todo) => ({
       ...todo,

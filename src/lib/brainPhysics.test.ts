@@ -18,13 +18,11 @@ function makeSpace(): Space {
     nodes: [
       {
         id: 'a',
-        type: 'neuron',
         position: { x: 100, y: 120 },
         data: { label: 'A' },
       },
       {
         id: 'b',
-        type: 'neuron',
         position: { x: 220, y: 140 },
         data: { label: 'B' },
       },
@@ -34,7 +32,6 @@ function makeSpace(): Space {
         id: 'e1',
         source: 'a',
         target: 'b',
-        type: 'default',
       },
     ],
     todos: [],

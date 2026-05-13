@@ -30,7 +30,6 @@ CREATE TABLE IF NOT EXISTS nodes (
   order_index INTEGER NOT NULL,
   position_x REAL NOT NULL,
   position_y REAL NOT NULL,
-  node_type TEXT,
   FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
 );
 
@@ -40,7 +39,6 @@ CREATE TABLE IF NOT EXISTS edges (
   source TEXT NOT NULL,
   target TEXT NOT NULL,
   order_index INTEGER NOT NULL,
-  edge_type TEXT,
   FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
 );
 
@@ -83,8 +81,6 @@ struct BrainNode {
     id: String,
     position: BrainNodePosition,
     data: BrainNodeData,
-    #[serde(rename = "type")]
-    node_type: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -93,8 +89,6 @@ struct BrainEdge {
     id: String,
     source: String,
     target: String,
-    #[serde(rename = "type")]
-    edge_type: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -163,7 +157,7 @@ fn load_setting(connection: &Connection, key: &str) -> Result<Option<String>, St
 fn load_nodes(connection: &Connection, space_id: &str) -> Result<Vec<BrainNode>, String> {
     let mut statement = connection
         .prepare(
-            "SELECT id, label, position_x, position_y, node_type
+            "SELECT id, label, position_x, position_y
              FROM nodes
              WHERE space_id = ?1
              ORDER BY order_index ASC",
@@ -179,7 +173,6 @@ fn load_nodes(connection: &Connection, space_id: &str) -> Result<Vec<BrainNode>,
                     y: row.get(3)?,
                 },
                 data: BrainNodeData { label: row.get(1)? },
-                node_type: row.get(4)?,
             })
         })
         .map_err(|error| format!("Unable to query nodes: {error}"))?;
@@ -195,7 +188,7 @@ fn load_nodes(connection: &Connection, space_id: &str) -> Result<Vec<BrainNode>,
 fn load_edges(connection: &Connection, space_id: &str) -> Result<Vec<BrainEdge>, String> {
     let mut statement = connection
         .prepare(
-            "SELECT id, source, target, edge_type
+            "SELECT id, source, target
              FROM edges
              WHERE space_id = ?1
              ORDER BY order_index ASC",
@@ -208,7 +201,6 @@ fn load_edges(connection: &Connection, space_id: &str) -> Result<Vec<BrainEdge>,
                 id: row.get(0)?,
                 source: row.get(1)?,
                 target: row.get(2)?,
-                edge_type: row.get(3)?,
             })
         })
         .map_err(|error| format!("Unable to query edges: {error}"))?;
@@ -384,16 +376,15 @@ fn save_snapshot(app: AppHandle, snapshot: AppSnapshot) -> Result<(), String> {
             transaction
                 .execute(
                     "INSERT INTO nodes (
-                      id, space_id, label, order_index, position_x, position_y, node_type
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                      id, space_id, label, order_index, position_x, position_y
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![
                         node.id,
                         space.id,
                         node.data.label,
                         node_index as i64,
                         node.position.x,
-                        node.position.y,
-                        node.node_type
+                        node.position.y
                     ],
                 )
                 .map_err(|error| format!("Unable to save node '{}': {error}", node.id))?;
@@ -403,15 +394,14 @@ fn save_snapshot(app: AppHandle, snapshot: AppSnapshot) -> Result<(), String> {
             transaction
                 .execute(
                     "INSERT INTO edges (
-                      id, space_id, source, target, order_index, edge_type
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                      id, space_id, source, target, order_index
+                     ) VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![
                         edge.id,
                         space.id,
                         edge.source,
                         edge.target,
-                        edge_index as i64,
-                        edge.edge_type
+                        edge_index as i64
                     ],
                 )
                 .map_err(|error| format!("Unable to save edge '{}': {error}", edge.id))?;

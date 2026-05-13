@@ -8,7 +8,6 @@ import { flushAnimationFrame } from '../test/setup';
 function makeNode(id: string, label: string, x: number, y: number): BrainNode {
   return {
     id,
-    type: 'neuron',
     position: { x, y },
     data: { label },
   };
@@ -24,7 +23,6 @@ function makeSpace(): Space {
         id: 'edge-1',
         source: 'a',
         target: 'b',
-        type: 'default',
       },
     ],
     todos: [],

@@ -242,7 +242,6 @@ export default function App() {
             id: crypto.randomUUID(),
             source: sourceId,
             target: targetId,
-            type: 'default',
           },
         ];
       })(),

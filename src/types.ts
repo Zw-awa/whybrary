@@ -16,7 +16,6 @@ export type BrainNodeData = {
 
 export type BrainNode = {
   id: string;
-  type?: string;
   position: {
     x: number;
     y: number;
@@ -28,7 +27,6 @@ export type BrainEdge = {
   id: string;
   source: string;
   target: string;
-  type?: string;
 };
 
 export type TodoItem = {
