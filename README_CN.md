@@ -52,12 +52,63 @@ Whybrary 已经可用，当前仍在持续打磨交互和工程结构。
 
 - 前端：React + TypeScript
 - 桌面容器：Tauri v2
-- 持久化：本地 SQLite 快照存储
+- 持久化：带 schema version 的本地 SQLite 快照存储（`PRAGMA user_version`）
 - 脑图渲染：本地 DOM + SVG + 应用内力导向模拟
 - 当前每轮改动的基本验收脚本：
   - `npm run lint`
   - `npm run test`
   - `npm run build`
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib`
+
+## 测试与 CI
+
+当前自动化验证分成三层：
+
+- 前端测试：`41` 个 Vitest 用例，覆盖 `App`、`BrainCanvas`、持久化、默认值和力导向逻辑
+- Rust 持久化测试：`8` 个 SQLite 相关测试，覆盖空库加载、快照 round-trip、旧数据清理、active space 清理、schema version 初始化、迁移幂等、旧 schema 迁移和未来版本拒绝
+- 真实 Tauri runtime 烟测：单独的 Linux CI job 会在 `xvfb` 下启动真实 Tauri 应用，写入真实 SQLite 文件，生成 smoke report 后退出
+
+当前 GitHub Actions workflow：
+
+- `ci.yml`
+  - `web-checks`：lint、test、build
+  - `tauri-checks`：`cargo check --tests` 与 `cargo test --lib`
+  - `tauri-smoke-linux`：真实 Tauri runtime 烟测
+- `release.yml`
+  - 基于版本校验的桌面打包发布
+
+## SQLite Schema
+
+当前 SQLite schema 起始版本为：
+
+- `user_version = 1`
+
+迁移规则是显式的：
+
+- 新数据库会初始化到 schema version `1`
+- 旧的无版本数据库会经过 `0 -> 1` migration
+- 如果数据库 schema 比当前构建更新，会直接拒绝打开，而不是静默兼容
+
+## 发布流程
+
+桌面发布通过推送版本 tag 触发：
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+发布 workflow 会先校验以下三个文件的版本号与 tag 一致：
+
+- `package.json`
+- `src-tauri/tauri.conf.json`
+- `src-tauri/Cargo.toml`
+
+校验通过后，会创建 draft GitHub release，并构建这些桌面包：
+
+- macOS：`app`、`dmg`
+- Linux：`appimage`、`deb`
+- Windows：`nsis`
 
 ## 隐私
 
@@ -73,6 +124,23 @@ Whybrary 已经可用，当前仍在持续打磨交互和工程结构。
 npm install
 npm run tauri dev
 ```
+
+## Smoke 模式
+
+仓库内有一条给 CI 使用的真实 Tauri runtime smoke 路径。
+
+相关环境变量：
+
+- `WHYBRARY_TAURI_SMOKE=1`
+- `WHYBRARY_APP_DATA_DIR=/path/to/temp/app-data`
+
+在 smoke 模式下，应用会：
+
+- 禁用正常窗口创建
+- 把真实快照写入 SQLite
+- 通过 Tauri runtime 再读回
+- 生成 `smoke-report.json`
+- 以成功或失败退出码结束
 
 ## 常用脚本
 

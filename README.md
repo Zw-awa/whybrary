@@ -52,12 +52,63 @@ Whybrary is usable and under active refinement.
 
 - Frontend: React + TypeScript
 - Desktop shell: Tauri v2
-- Persistence: local SQLite snapshot storage
+- Persistence: local SQLite snapshot storage with schema versioning (`PRAGMA user_version`)
 - Graph rendering: local DOM + SVG + in-app force simulation
 - Quality gates currently expected on each change:
   - `npm run lint`
   - `npm run test`
   - `npm run build`
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib`
+
+## Testing and CI
+
+Current automated coverage is split across three layers:
+
+- Frontend tests: `41` Vitest cases across `App`, `BrainCanvas`, persistence, defaults, and force simulation
+- Rust persistence tests: `8` SQLite-focused tests for empty DB load, snapshot round-trip, stale row cleanup, active-space cleanup, schema version initialization, migration idempotence, legacy schema migration, and future-version rejection
+- Real Tauri runtime smoke: a dedicated Linux CI job boots the Tauri app under `xvfb`, writes to a real SQLite file, emits a smoke report, and exits
+
+Current GitHub Actions workflows:
+
+- `ci.yml`
+  - `web-checks`: lint, test, build
+  - `tauri-checks`: `cargo check --tests` and `cargo test --lib`
+  - `tauri-smoke-linux`: real Tauri runtime smoke against a real app data directory
+- `release.yml`
+  - version-verified desktop packaging on tag push
+
+## SQLite Schema
+
+The current SQLite schema starts at:
+
+- `user_version = 1`
+
+Migration behavior is explicit:
+
+- new databases initialize to schema version `1`
+- legacy unversioned databases are migrated through the `0 -> 1` step
+- newer unsupported schema versions are rejected instead of being silently opened
+
+## Release Flow
+
+Desktop release packaging is triggered by pushing a version tag:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The release workflow verifies that these three files all match the tag version before bundling:
+
+- `package.json`
+- `src-tauri/tauri.conf.json`
+- `src-tauri/Cargo.toml`
+
+It then creates a draft GitHub release and builds desktop bundles for:
+
+- macOS: `app`, `dmg`
+- Linux: `appimage`, `deb`
+- Windows: `nsis`
 
 ## Privacy
 
@@ -73,6 +124,23 @@ Whybrary is usable and under active refinement.
 npm install
 npm run tauri dev
 ```
+
+## Smoke Mode
+
+There is an internal smoke path used by CI for real Tauri runtime verification.
+
+Relevant environment variables:
+
+- `WHYBRARY_TAURI_SMOKE=1`
+- `WHYBRARY_APP_DATA_DIR=/path/to/temp/app-data`
+
+In smoke mode the app:
+
+- disables normal window creation
+- persists a real snapshot into SQLite
+- reads it back through the Tauri runtime
+- writes `smoke-report.json`
+- exits with a success or failure code
 
 ## Useful Scripts
 

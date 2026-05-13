@@ -1,6 +1,6 @@
 [package]
 name = "whybrary"
-version = "0.1.4"
+version = "0.2.0"
 description = "Local-first personal why manager with a neuron-style graph and lightweight To-Do lists."
 authors = ["Zw-awa"]
 edition = "2021"
