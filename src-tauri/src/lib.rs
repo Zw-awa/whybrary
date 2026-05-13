@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 const LATEST_SCHEMA_VERSION: i32 = 1;
+const SMOKE_MODE_ENV: &str = "WHYBRARY_TAURI_SMOKE";
+const APP_DATA_DIR_OVERRIDE_ENV: &str = "WHYBRARY_APP_DATA_DIR";
 
 const MIGRATION_1_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS settings (
@@ -123,6 +125,15 @@ struct AppSnapshot {
     last_opened_at: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SmokeReport {
+    success: bool,
+    db_path: String,
+    schema_version: i32,
+    error: Option<String>,
+}
+
 fn configure_connection(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch("PRAGMA foreign_keys = ON;")
@@ -177,14 +188,27 @@ fn prepare_connection(connection: &Connection) -> Result<(), String> {
     run_migrations(connection)
 }
 
-fn app_db_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let mut db_path = app
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(override_dir) = std::env::var_os(APP_DATA_DIR_OVERRIDE_ENV) {
+        let app_data_dir = PathBuf::from(override_dir);
+        fs::create_dir_all(&app_data_dir)
+            .map_err(|error| format!("Unable to create overridden app data directory: {error}"))?;
+        return Ok(app_data_dir);
+    }
+
+    let app_data_dir = app
         .path()
         .app_data_dir()
         .map_err(|error| format!("Unable to resolve app data directory: {error}"))?;
 
-    fs::create_dir_all(&db_path)
+    fs::create_dir_all(&app_data_dir)
         .map_err(|error| format!("Unable to create app data directory: {error}"))?;
+
+    Ok(app_data_dir)
+}
+
+fn app_db_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut db_path = app_data_dir(app)?;
 
     db_path.push("whybrary.sqlite3");
     Ok(db_path)
@@ -493,6 +517,75 @@ fn save_snapshot(app: AppHandle, snapshot: AppSnapshot) -> Result<(), String> {
     save_snapshot_to_connection(&mut connection, &snapshot)
 }
 
+fn smoke_report_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut report_path = app_data_dir(app)?;
+    report_path.push("smoke-report.json");
+    Ok(report_path)
+}
+
+fn smoke_snapshot() -> AppSnapshot {
+    AppSnapshot {
+        theme: "light".to_string(),
+        active_space_id: Some("smoke-space".to_string()),
+        last_opened_at: "2026-01-01T00:00:00.000Z".to_string(),
+        spaces: vec![Space {
+            id: "smoke-space".to_string(),
+            name: "Smoke Space".to_string(),
+            nodes: vec![BrainNode {
+                id: "smoke-node".to_string(),
+                position: BrainNodePosition { x: 120.0, y: 180.0 },
+                data: BrainNodeData {
+                    label: "Smoke".to_string(),
+                },
+            }],
+            edges: vec![],
+            todos: vec![TodoItem {
+                id: "smoke-todo".to_string(),
+                text: "Verify SQLite persistence".to_string(),
+                completed: false,
+                created_at: "2026-01-01T00:00:00.000Z".to_string(),
+                updated_at: "2026-01-01T00:00:00.000Z".to_string(),
+            }],
+            viewport: ViewportState {
+                x: 0.0,
+                y: 0.0,
+                zoom: 1.0,
+            },
+            created_at: "2026-01-01T00:00:00.000Z".to_string(),
+            updated_at: "2026-01-01T00:00:00.000Z".to_string(),
+        }],
+    }
+}
+
+fn run_tauri_smoke(app: AppHandle) -> Result<(), String> {
+    let expected = smoke_snapshot();
+    save_snapshot(app.clone(), expected.clone())?;
+    let actual = load_snapshot(app.clone())?;
+
+    if actual != expected {
+        return Err("Smoke snapshot round-trip mismatch.".to_string());
+    }
+
+    let connection = open_connection(&app)?;
+    let schema_version = load_schema_version(&connection)?;
+    if schema_version != LATEST_SCHEMA_VERSION {
+        return Err(format!(
+            "Smoke schema version mismatch: expected {LATEST_SCHEMA_VERSION}, got {schema_version}."
+        ));
+    }
+
+    Ok(())
+}
+
+fn write_smoke_report(app: &AppHandle, report: &SmokeReport) -> Result<(), String> {
+    let report_path = smoke_report_path(app)?;
+    let serialized =
+        serde_json::to_string_pretty(report).map_err(|error| format!("Unable to serialize smoke report: {error}"))?;
+
+    fs::write(&report_path, serialized)
+        .map_err(|error| format!("Unable to write smoke report '{}': {error}", report_path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -714,8 +807,54 @@ mod tests {
 }
 
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    if std::env::var_os(SMOKE_MODE_ENV).is_some() {
+        context.config_mut().app.windows.clear();
+    }
+
     tauri::Builder::default()
+        .setup(|app| {
+            if std::env::var_os(SMOKE_MODE_ENV).is_none() {
+                return Ok(());
+            }
+
+            let app_handle = app.handle().clone();
+            let db_path_result = app_db_path(&app_handle);
+
+            let report = match db_path_result {
+                Ok(db_path) => match run_tauri_smoke(app_handle.clone()) {
+                    Ok(()) => SmokeReport {
+                        success: true,
+                        db_path: db_path.display().to_string(),
+                        schema_version: LATEST_SCHEMA_VERSION,
+                        error: None,
+                    },
+                    Err(error) => SmokeReport {
+                        success: false,
+                        db_path: db_path.display().to_string(),
+                        schema_version: 0,
+                        error: Some(error),
+                    },
+                },
+                Err(error) => SmokeReport {
+                    success: false,
+                    db_path: String::new(),
+                    schema_version: 0,
+                    error: Some(error),
+                },
+            };
+
+            let exit_code = if report.success { 0 } else { 1 };
+
+            if let Err(error) = write_smoke_report(&app_handle, &report) {
+                eprintln!("{error}");
+            }
+
+            app_handle.exit(exit_code);
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![load_snapshot, save_snapshot])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running Whybrary");
 }

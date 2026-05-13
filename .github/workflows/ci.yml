@@ -64,3 +64,58 @@ jobs:
       - name: Run cargo test
         working-directory: src-tauri
         run: cargo test --lib
+
+  tauri-smoke-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Tauri smoke
+        env:
+          WHYBRARY_TAURI_SMOKE: "1"
+          WHYBRARY_APP_DATA_DIR: ${{ github.workspace }}/src-tauri/target/ci-smoke/whybrary
+        run: cargo run --manifest-path src-tauri/Cargo.toml
+
+      - name: Assert smoke report and sqlite file
+        shell: bash
+        env:
+          SMOKE_DIR: ${{ github.workspace }}/src-tauri/target/ci-smoke/whybrary
+        run: |
+          set -euo pipefail
+
+          REPORT_PATH="$SMOKE_DIR/smoke-report.json"
+          DB_PATH="$SMOKE_DIR/whybrary.sqlite3"
+
+          test -f "$REPORT_PATH"
+          test -f "$DB_PATH"
+
+          cat "$REPORT_PATH"
+          grep -q '"success": true' "$REPORT_PATH"
