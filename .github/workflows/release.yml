@@ -193,6 +193,10 @@ jobs:
           )
           "ANDROID_KEYSTORE_PATH=$keystorePath" >> $env:GITHUB_ENV
 
+      - name: Prepare Android project
+        shell: pwsh
+        run: npm run android:prepare
+
       - name: Build and sign Android APK
         shell: pwsh
         env:
