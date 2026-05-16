@@ -77,17 +77,6 @@ foreach ($target in $targets) {
     }
 }
 
-for ($attempt = 1; $attempt -le 20; $attempt += 1) {
-    if (Test-Path $tauriSettingsGradlePath) {
-        break
-    }
-    Start-Sleep -Milliseconds 500
-}
-
-if (-not (Test-Path $tauriSettingsGradlePath)) {
-    throw 'Missing required file for Android patching: tauri.settings.gradle'
-}
-
 Write-Output 'Android project directory: src-tauri/gen/android'
 Write-Output "Gradle mirror: $desiredDistributionUrl"
 Write-Output 'Repository strategy: Aliyun mirrors first, official repos kept as fallback.'
