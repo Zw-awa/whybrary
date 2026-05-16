@@ -197,6 +197,30 @@ function Update-AppBuildToolsVersion {
     Write-Output "已更新：显式指定 buildToolsVersion=36.0.0。"
 }
 
+function Update-ReleaseMinifySetting {
+    param([string]$Path)
+
+    $content = Get-Content $Path -Raw
+    if ($content -match 'getByName\("release"\)\s*\{[\s\S]*?isMinifyEnabled = false') {
+        Write-Output "未变更：release 已禁用 minify。"
+        return
+    }
+
+    $updated = [regex]::Replace(
+        $content,
+        'getByName\("release"\)\s*\{([\s\S]*?)isMinifyEnabled = true',
+        'getByName("release") {$1isMinifyEnabled = false',
+        [System.Text.RegularExpressions.RegexOptions]::Singleline
+    )
+
+    if ($updated -eq $content) {
+        throw "未找到 release 构建类型里的 isMinifyEnabled 配置。"
+    }
+
+    Set-Content -Path $Path -Value $updated -Encoding UTF8
+    Write-Output "已更新：release 禁用 minify，用于规避启动期被 R8 裁剪。"
+}
+
 function Resolve-TauriVersion {
     param([string]$Path)
 
@@ -292,6 +316,7 @@ Update-RepositoriesFile -Path $rootGradlePath
 Update-RepositoriesFile -Path $buildSrcGradlePath
 Update-GradlePropertiesFile -Path $gradlePropertiesPath
 Update-AppBuildToolsVersion -Path $appGradlePath
+Update-ReleaseMinifySetting -Path $appGradlePath
 $tauriSourceDir = Resolve-TauriAndroidSourceDir -CargoLockPath $cargoLockPath
 Sync-TauriAndroidVendor -SourceDir $tauriSourceDir -VendorDir $tauriVendorDir -SettingsPath $tauriSettingsGradlePath
 Update-AppBuildToolsVersion -Path (Join-Path $tauriVendorDir 'build.gradle.kts')

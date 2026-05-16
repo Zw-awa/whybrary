@@ -51,6 +51,7 @@ git push origin vX.Y.Z
    - macOS: `dmg`
    - Linux: `deb`, `rpm`, `appimage`
    - Windows: `nsis`
+4. explicitly disables desktop code signing in the build arguments (`--no-sign`)
 
 After the workflow finishes:
 
@@ -186,14 +187,20 @@ If you want to distribute the APK to real users, use a release keystore and sign
 
 ## Signing status
 
-Signing is optional for the current direct-download flow, but platform trust prompts differ:
+Desktop signing is now explicitly disabled in the shared release workflow:
+
+- Windows: NSIS installer is built unsigned
+- macOS: DMG is built unsigned
+- Linux: packages are built unsigned
+
+This avoids accidental signing attempts caused by inherited or environment-level secrets.
+
+Platform trust prompts still differ:
 
 - Windows: unsigned installers may trigger SmartScreen warnings
 - macOS: unsigned or unnotarized builds may require manual approval in Gatekeeper
 - Linux: package signing is optional but can improve trust for some users
 - Android: release APK distribution should use your own signing key
-
-The current workflow already contains optional certificate-import steps for Windows and macOS. If the related repository secrets are configured, those steps can be used for smoother end-user installation. If they are absent, the release still builds unsigned assets.
 
 ## Pages flow
 

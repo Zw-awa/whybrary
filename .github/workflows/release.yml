@@ -65,11 +65,11 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            bundle_args: "--bundles dmg"
+            bundle_args: "--bundles dmg --no-sign"
           - platform: ubuntu-22.04
-            bundle_args: "--bundles deb,rpm,appimage"
+            bundle_args: "--bundles deb,rpm,appimage --no-sign"
           - platform: windows-latest
-            bundle_args: "--bundles nsis"
+            bundle_args: "--bundles nsis --no-sign"
 
     runs-on: ${{ matrix.platform }}
 
@@ -110,85 +110,10 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Import Apple Developer Certificate
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ] || [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
-            echo "Skipping macOS certificate import; required secrets are not configured."
-            exit 0
-          fi
-
-          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
-          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security set-keychain-settings -t 3600 -u build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-
-          CERT_ID=$(security find-identity -v -p codesigning build.keychain | head -n1 | awk -F'"' '{print $2}')
-          if [ -z "$CERT_ID" ]; then
-            echo "No macOS signing identity found after certificate import."
-            exit 1
-          fi
-
-          echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
-
-      - name: Prepare Apple notarization key
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        env:
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${APPLE_API_PRIVATE_KEY:-}" ]; then
-            echo "Skipping App Store Connect API key setup; secret is not configured."
-            exit 0
-          fi
-
-          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
-          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$KEY_PATH"
-          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
-
-      - name: Import Windows certificate
-        if: matrix.platform == 'windows-latest'
-        shell: powershell
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
-            Write-Host "Skipping Windows certificate import; required secrets are not configured."
-            exit 0
-          }
-
-          New-Item -ItemType Directory -Force -Path certificate | Out-Null
-          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
-          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
-          Remove-Item certificate/tempCert.txt
-          Import-PfxCertificate -FilePath certificate/certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText) | Out-Null
-
       - name: Publish direct-download bundles
         uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Whybrary ${{ github.ref_name }}"

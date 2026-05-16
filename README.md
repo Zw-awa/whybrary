@@ -107,6 +107,7 @@ Current GitHub Actions workflows:
     - Windows: `nsis`
     - macOS: `dmg`
     - Linux: `deb`, `rpm`, `appimage`
+  - desktop packaging currently runs unsigned by default (`--no-sign`)
 
 ## Release Tutorial
 

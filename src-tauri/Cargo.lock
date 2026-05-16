@@ -3975,7 +3975,7 @@ dependencies = [
 
 [[package]]
 name = "whybrary"
-version = "0.2.0"
+version = "0.2.0-rc1"
 dependencies = [
  "rusqlite",
  "serde",

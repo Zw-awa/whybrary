@@ -107,6 +107,7 @@ Whybrary 已经可用，当前仍在持续打磨交互和工程结构。
     - Windows：`nsis`
     - macOS：`dmg`
     - Linux：`deb`、`rpm`、`appimage`
+  - 桌面端当前默认以 unsigned 方式构建（`--no-sign`）
 
 ## 发布教程
 
