@@ -13,19 +13,38 @@
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-c97838?style=flat-square" />
   <img alt="Desktop" src="https://img.shields.io/badge/Desktop-Tauri%20v2-4767d8?style=flat-square" />
-  <img alt="Local First" src="https://img.shields.io/badge/Mode-Local--First-7c5cff?style=flat-square" />
-  <img alt="Offline" src="https://img.shields.io/badge/Network-Offline%20Only-a94f67?style=flat-square" />
+  <img alt="Android" src="https://img.shields.io/badge/Android-APK%20SideLoad-5a8f61?style=flat-square" />
+  <img alt="Mode" src="https://img.shields.io/badge/Mode-Local--First-7c5cff?style=flat-square" />
   <img alt="Storage" src="https://img.shields.io/badge/Storage-SQLite-4767d8?style=flat-square" />
 </p>
 
 <p align="center">
-  A local-first desktop app for keeping your own "why" visible through a mind map and a lightweight To-Do list.
+  A local-first app for keeping your own "why" visible through a mind map and a lightweight To-Do list.
 </p>
 
-## Try Online
+## Install
 
-- GitHub Pages web preview: `https://zw-awa.github.io/whybrary/`
-- Best current portability path: export and import JSON snapshots
+Whybrary is distributed as direct-download installers and packages. It is not currently targeting app stores.
+
+- Windows: download the `-setup.exe` asset from GitHub Releases and run it
+  - if WebView2 is missing, the installer will fetch the Microsoft bootstrapper during install
+- macOS: download the `.dmg` asset, open it, and drag Whybrary into `Applications`
+- Linux:
+  - Debian / Ubuntu: download the `.deb` package and install it
+  - Fedora / RHEL / openSUSE: download the `.rpm` package and install it
+  - Portable fallback: use the `.AppImage` if you prefer a no-install build
+- Android: build or distribute a signed `.apk` for direct sideload installation
+
+Release assets are published here:
+
+- GitHub Releases: `https://github.com/Zw-awa/whybrary/releases`
+
+If a build is unsigned on your platform, the operating system may show an extra trust prompt before first launch. That is separate from app-store publishing.
+
+## Web Preview
+
+- GitHub Pages preview: `https://zw-awa.github.io/whybrary/`
+- The browser preview is for quick use and JSON import/export portability
 
 ## Overview
 
@@ -46,9 +65,9 @@ Instead of mixing long notes, bookmarks, and task clutter, Whybrary keeps things
 - Open the info panel to inspect node positions and link counts
 - Track a node from the info panel so the viewport centers on it
 - Enable multi-select, select all, and batch delete from the info panel
-- Delete the current selection with the keyboard
 - Keep short single-line To-Do items beside the map
 - Switch between light and dark themes
+- Use the mobile layout with bottom navigation, touch-friendly map actions, and in-app confirmation dialogs
 - Work entirely offline with local SQLite persistence
 - Import and export portable JSON snapshots in the browser preview
 
@@ -57,11 +76,10 @@ Instead of mixing long notes, bookmarks, and task clutter, Whybrary keeps things
 Whybrary is usable and under active refinement.
 
 - Frontend: React + TypeScript
-- Desktop shell: Tauri v2
+- App shell: Tauri v2
 - Persistence: local SQLite snapshot storage with schema versioning (`PRAGMA user_version`)
 - Graph rendering: local DOM + SVG + in-app force simulation
-- Quality gates currently expected on each change:
-  - `npm run lint`
+- Expected checks on each change:
   - `npm run test`
   - `npm run build`
   - `cargo test --manifest-path src-tauri/Cargo.toml --lib`
@@ -70,57 +88,136 @@ Whybrary is usable and under active refinement.
 
 Current automated coverage is split across three layers:
 
-- Frontend tests: `46` Vitest cases across `App`, `BrainCanvas`, persistence, defaults, snapshot transfer, and force simulation
+- Frontend tests: `51` Vitest cases across `App`, `BrainCanvas`, persistence, defaults, snapshot transfer, and force simulation
 - Rust persistence tests: `8` SQLite-focused tests for empty DB load, snapshot round-trip, stale row cleanup, active-space cleanup, schema version initialization, migration idempotence, legacy schema migration, and future-version rejection
 - Real Tauri runtime smoke: a dedicated Linux CI job boots the Tauri app under `xvfb`, writes to a real SQLite file, emits a smoke report, and exits
 
 Current GitHub Actions workflows:
 
 - `ci.yml`
-  - `web-checks`: lint, test, build
-  - `tauri-checks`: `cargo check --tests` and `cargo test --lib`
-  - `tauri-smoke-linux`: real Tauri runtime smoke against a real app data directory
+  - web checks
+  - Rust checks
+  - Linux Tauri runtime smoke
 - `pages.yml`
   - builds and deploys the browser preview to GitHub Pages
 - `release.yml`
-  - version-verified desktop packaging on tag push
+  - verifies the tag version
+  - creates a draft GitHub release
+  - uploads direct-download desktop packages:
+    - Windows: `nsis`
+    - macOS: `dmg`
+    - Linux: `deb`, `rpm`, `appimage`
 
-## SQLite Schema
+## Release Tutorial
 
-The current SQLite schema starts at:
+If you are the maintainer and want to publish a new version:
 
-- `user_version = 1`
-
-Migration behavior is explicit:
-
-- new databases initialize to schema version `1`
-- legacy unversioned databases are migrated through the `0 -> 1` step
-- newer unsupported schema versions are rejected instead of being silently opened
-
-## Release Flow
-
-Desktop release packaging is triggered by pushing a version tag:
+1. Update the version in:
+   - `package.json`
+   - `src-tauri/tauri.conf.json`
+   - `src-tauri/Cargo.toml`
+2. Run:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+npm install
+npm run test
+npm run build
+cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
-The release workflow verifies that these three files all match the tag version before bundling:
+3. Commit and push:
 
-- `package.json`
-- `src-tauri/tauri.conf.json`
-- `src-tauri/Cargo.toml`
+```bash
+git add .
+git commit -m "Prepare vX.Y.Z release"
+git push
+```
 
-It then creates a draft GitHub release and builds desktop bundles for:
+4. Create and push the tag:
 
-- macOS: `app`, `dmg`
-- Linux: `appimage`, `deb`
-- Windows: `nsis`
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
 
-Signing and notarization hardening is partially prepared in the workflow, but still depends on repository secrets and platform certificates.
+5. Wait for the `release.yml` workflow to finish.
+6. Open the draft GitHub release, review the uploaded assets, then publish it.
 
-For now, signed desktop distribution is intentionally deferred until broader multi-user distribution or explicit trust requirements make it worth the overhead and identity exposure.
+### Local packaging shortcuts
+
+```bash
+npm run desktop:win
+npm run desktop:mac
+npm run desktop:linux
+```
+
+Platform note:
+
+- `desktop:win` is meant to run on Windows
+- `desktop:mac` is meant to run on macOS
+- `desktop:linux` is meant to run on Linux
+- cross-platform desktop release packaging is expected to happen through the GitHub Actions release workflow
+
+### Android packaging shortcuts
+
+```bash
+npm run android:prepare
+npm run android:build:apk
+npm run android:sign:apk
+npm run android:build:signed
+npm run android:dev
+```
+
+Recommended Android flow:
+
+1. `npm run android:prepare`
+   - initializes `src-tauri/gen/android`
+   - reads your existing `JAVA_HOME` / `ANDROID_HOME` / `ANDROID_SDK_ROOT` / `NDK_HOME`
+   - rewrites the generated Gradle wrapper and repositories to mirror-first sources
+2. `npm run android:build:apk`
+   - reapplies the same fixed Android environment
+   - keeps the locally vendored `tauri-android` module instead of letting the Tauri CLI regenerate it during build
+   - reapplies mirrors
+   - runs the generated Android Gradle project directly
+   - currently builds the `arm64` release APK, which matches the available local Rust Android target output
+   - copies the default Gradle output to a stable release-friendly filename
+3. `npm run android:sign:apk`
+   - reads signing inputs from environment variables
+   - runs `zipalign` and `apksigner`
+   - produces `whybrary-<version>-arm64-release.apk`
+
+Local note:
+
+- before running `android:sign:apk` locally, export the four signing variables in your current shell
+- in GitHub Actions, the Android release job reads the same values from repository secrets
+
+Required signing environment variables:
+
+- `ANDROID_KEYSTORE_PATH`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+Mirror policy:
+
+- Gradle distribution: Tencent mirror
+- Maven repositories: Aliyun mirror first, official `google()` / `mavenCentral()` kept as fallback
+- Android SDK auto-download: disabled to avoid long remote manifest waits during local builds
+
+Expected environment:
+
+- `JAVA_HOME`
+- `ANDROID_HOME`
+- `ANDROID_SDK_ROOT`
+- `NDK_HOME`
+
+Workspace-local caches used by the scripts:
+
+- `.gradle-android-user-home`
+- `.kotlin-daemon`
+- `.tmp`
+
+Android release packaging is currently expected to be done locally after preparing Android Studio, SDK/NDK, and Rust Android targets.
 
 ## Privacy
 
@@ -163,15 +260,6 @@ The web preview is designed for quick use and easy portability:
 - it can export a JSON snapshot with basic metadata
 - it can import both current export envelopes and legacy raw snapshot JSON
 - it includes a browser-local reset action for clearing preview data
-
-## Useful Scripts
-
-```bash
-npm run lint
-npm run test
-npm run build
-npm run tauri dev
-```
 
 ## Release Notes
 

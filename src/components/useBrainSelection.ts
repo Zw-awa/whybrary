@@ -5,6 +5,7 @@ type UseBrainSelectionArgs = {
   isEditMode: boolean;
   nodeLabels: Array<{ id: string; label: string }>;
   onDeleteNodes: (nodeIds: string[]) => void;
+  onRequestDeleteSelection?: (nodeIds: string[], labels: string[]) => void;
   onToggleConnection: (sourceId: string, targetId: string) => void;
   setTrackedNodeId: (nodeId: string | null) => void;
 };
@@ -14,6 +15,7 @@ export function useBrainSelection({
   isEditMode,
   nodeLabels,
   onDeleteNodes,
+  onRequestDeleteSelection,
   onToggleConnection,
   setTrackedNodeId,
 }: UseBrainSelectionArgs) {
@@ -108,10 +110,16 @@ export function useBrainSelection({
       return;
     }
 
-    const preview = infoSelection
-      .map((nodeId) => nodeLabels.find((node) => node.id === nodeId)?.label || 'Untitled')
-      .slice(0, 3)
-      .join(', ');
+    const labels = infoSelection.map(
+      (nodeId) => nodeLabels.find((node) => node.id === nodeId)?.label || 'Untitled',
+    );
+
+    if (onRequestDeleteSelection) {
+      onRequestDeleteSelection(infoSelection, labels);
+      return;
+    }
+
+    const preview = labels.slice(0, 3).join(', ');
     const suffix = infoSelection.length > 3 ? ` and ${infoSelection.length - 3} more` : '';
     const confirmed = window.confirm(
       `Delete ${infoSelection.length} selected node${infoSelection.length > 1 ? 's' : ''}? ${preview}${suffix}`,

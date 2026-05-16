@@ -1,4 +1,5 @@
 import { startTransition, useEffect, useState } from 'react';
+import { AppDialog } from './components/AppDialog';
 import { BrainCanvas } from './components/BrainCanvas';
 import { SpaceSidebar } from './components/SpaceSidebar';
 import { WhyTodoPanel } from './components/WhyTodoPanel';
@@ -9,14 +10,30 @@ import {
   normalizeSnapshot,
   nowIso,
 } from './lib/defaults';
-import { loadSnapshot, saveSnapshot } from './lib/persistence';
-import { clearPreviewSnapshot } from './lib/persistence';
+import { clearPreviewSnapshot, loadSnapshot, saveSnapshot } from './lib/persistence';
 import {
   buildSnapshotFilename,
   parseSnapshot,
   serializeSnapshot,
 } from './lib/snapshotTransfer';
-import type { AppSnapshot, BrainNode, Space } from './types';
+import type {
+  AppSnapshot,
+  BrainNode,
+  DeviceLayoutMode,
+  MobilePrimaryView,
+  Space,
+} from './types';
+
+type AppDialogState =
+  | null
+  | {
+      confirmLabel: string;
+      message: string;
+      onConfirm: () => void;
+      title: string;
+      tone?: 'neutral' | 'danger';
+      variant?: 'confirm' | 'notice';
+    };
 
 function saveStatusLabel(status: 'booting' | 'saving' | 'saved' | 'error'): string {
   switch (status) {
@@ -37,6 +54,18 @@ function isWebPreview(): boolean {
   return typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window);
 }
 
+function getLayoutMode(width: number): DeviceLayoutMode {
+  if (width <= 768) {
+    return 'phone';
+  }
+
+  if (width < 1200) {
+    return 'tablet';
+  }
+
+  return 'desktop';
+}
+
 export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(() => buildDefaultState());
   const [hydrated, setHydrated] = useState(false);
@@ -45,10 +74,27 @@ export default function App() {
   const [isMapEditing, setIsMapEditing] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
+  const [layoutMode, setLayoutMode] = useState<DeviceLayoutMode>(() =>
+    typeof window === 'undefined' ? 'desktop' : getLayoutMode(window.innerWidth),
+  );
+  const [mobileView, setMobileView] = useState<MobilePrimaryView>('map');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [dialogState, setDialogState] = useState<AppDialogState>(null);
   const webPreview = isWebPreview();
+  const isMobile = layoutMode === 'phone';
+  const isTablet = layoutMode === 'tablet';
 
   const activeSpace =
     snapshot.spaces.find((space) => space.id === snapshot.activeSpaceId) ?? snapshot.spaces[0];
+
+  useEffect(() => {
+    const handleResize = () => {
+      setLayoutMode(getLayoutMode(window.innerWidth));
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!editingNodeId || !activeSpace) {
@@ -60,6 +106,18 @@ export default function App() {
       setEditingNodeId(null);
     }
   }, [activeSpace, editingNodeId]);
+
+  useEffect(() => {
+    if (!isMobile) {
+      setIsSidebarOpen(false);
+    }
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (mobileView === 'spaces' && !isMobile) {
+      setMobileView('map');
+    }
+  }, [isMobile, mobileView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +152,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [webPreview]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = snapshot.theme;
@@ -149,6 +207,20 @@ export default function App() {
     }));
   };
 
+  const closeDialog = () => {
+    setDialogState(null);
+  };
+
+  const showNotice = (title: string, message: string) => {
+    setDialogState({
+      confirmLabel: 'Close',
+      message,
+      onConfirm: () => setDialogState(null),
+      title,
+      variant: 'notice',
+    });
+  };
+
   const handleToggleTheme = () => {
     updateSnapshot((current) => ({
       ...current,
@@ -193,10 +265,11 @@ export default function App() {
           setHydrated(true);
           setSaveStatus('saved');
           setBannerMessage('Snapshot imported successfully.');
+          setIsSidebarOpen(false);
         });
       } catch (error) {
         console.warn('Failed to import snapshot JSON.', error);
-        window.alert('Import failed. Please choose a valid Whybrary JSON snapshot.');
+        showNotice('Import failed', 'Please choose a valid Whybrary JSON snapshot.');
       }
     };
 
@@ -204,22 +277,26 @@ export default function App() {
   };
 
   const handleResetPreviewData = () => {
-    const confirmed = window.confirm(
-      'Clear the browser-local Whybrary snapshot and replace it with a fresh default space?',
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    const fallback = buildDefaultState();
-    clearPreviewSnapshot();
-    setEditingNodeId(null);
-    setIsMapEditing(false);
-    setShowWelcome(webPreview);
-    setSnapshot(fallback);
-    setHydrated(true);
-    setSaveStatus('saved');
-    setBannerMessage('Browser-local snapshot reset.');
+    setDialogState({
+      confirmLabel: 'Reset Data',
+      message: 'Clear the browser-local Whybrary snapshot and replace it with a fresh default space?',
+      onConfirm: () => {
+        const fallback = buildDefaultState();
+        clearPreviewSnapshot();
+        setEditingNodeId(null);
+        setIsMapEditing(false);
+        setShowWelcome(webPreview);
+        setSnapshot(fallback);
+        setHydrated(true);
+        setSaveStatus('saved');
+        setBannerMessage('Browser-local snapshot reset.');
+        setDialogState(null);
+        setIsSidebarOpen(false);
+        setMobileView('map');
+      },
+      title: 'Reset browser data',
+      tone: 'danger',
+    });
   };
 
   const handleSelectSpace = (spaceId: string) => {
@@ -229,6 +306,10 @@ export default function App() {
       ...current,
       activeSpaceId: spaceId,
     }));
+    if (isMobile) {
+      setMobileView('map');
+      setIsSidebarOpen(false);
+    }
   };
 
   const handleCreateSpace = () => {
@@ -244,6 +325,9 @@ export default function App() {
         activeSpaceId: nextSpace.id,
       };
     });
+    if (isMobile) {
+      setMobileView('map');
+    }
   };
 
   const handleRenameActiveSpace = (nextName: string) => {
@@ -258,30 +342,37 @@ export default function App() {
       return;
     }
 
-    const confirmed = window.confirm(`Delete "${activeSpace.name || 'Untitled Space'}"?`);
-    if (!confirmed) {
-      return;
-    }
+    setDialogState({
+      confirmLabel: 'Delete Space',
+      message: `Delete "${activeSpace.name || 'Untitled Space'}"?`,
+      onConfirm: () => {
+        setEditingNodeId(null);
+        setIsMapEditing(false);
+        updateSnapshot((current) => {
+          const remaining = current.spaces.filter((space) => space.id !== current.activeSpaceId);
+          if (remaining.length === 0) {
+            const replacement = createSpace('My First Space');
 
-    setEditingNodeId(null);
-    setIsMapEditing(false);
-    updateSnapshot((current) => {
-      const remaining = current.spaces.filter((space) => space.id !== current.activeSpaceId);
-      if (remaining.length === 0) {
-        const replacement = createSpace('My First Space');
+            return {
+              ...current,
+              spaces: [replacement],
+              activeSpaceId: replacement.id,
+            };
+          }
 
-        return {
-          ...current,
-          spaces: [replacement],
-          activeSpaceId: replacement.id,
-        };
-      }
-
-      return {
-        ...current,
-        spaces: remaining,
-        activeSpaceId: remaining[0].id,
-      };
+          return {
+            ...current,
+            spaces: remaining,
+            activeSpaceId: remaining[0].id,
+          };
+        });
+        setDialogState(null);
+        if (isMobile) {
+          setMobileView('map');
+        }
+      },
+      title: 'Delete current space',
+      tone: 'danger',
     });
   };
 
@@ -339,7 +430,7 @@ export default function App() {
     }));
   };
 
-  const handleDeleteNodes = (nodeIds: string[]) => {
+  const commitDeleteNodes = (nodeIds: string[]) => {
     if (!activeSpace) {
       return;
     }
@@ -359,6 +450,26 @@ export default function App() {
     }));
   };
 
+  const handleDeleteNodes = (nodeIds: string[]) => {
+    commitDeleteNodes(nodeIds);
+  };
+
+  const handleRequestDeleteNodes = (nodeIds: string[], labels: string[]) => {
+    const preview = labels.slice(0, 3).join(', ');
+    const suffix = nodeIds.length > 3 ? ` and ${nodeIds.length - 3} more` : '';
+
+    setDialogState({
+      confirmLabel: nodeIds.length > 1 ? 'Delete Nodes' : 'Delete Node',
+      message: `Delete ${nodeIds.length} selected node${nodeIds.length > 1 ? 's' : ''}? ${preview}${suffix}`,
+      onConfirm: () => {
+        commitDeleteNodes(nodeIds);
+        setDialogState(null);
+      },
+      title: 'Delete selected nodes',
+      tone: 'danger',
+    });
+  };
+
   const handleAddNeuron = (position?: BrainNode['position']) => {
     const nextNode = createNeuronNode('', position?.x ?? 220, position?.y ?? 180);
     setIsMapEditing(true);
@@ -368,6 +479,10 @@ export default function App() {
       ...space,
       nodes: [...space.nodes, nextNode],
     }));
+
+    if (isMobile) {
+      setMobileView('map');
+    }
 
     return nextNode;
   };
@@ -398,6 +513,10 @@ export default function App() {
   };
 
   const handleAddTodo = (text: string) => {
+    if (!text.trim()) {
+      return;
+    }
+
     updateActiveSpace((space) => ({
       ...space,
       todos: [
@@ -450,6 +569,27 @@ export default function App() {
     }));
   };
 
+  const renderSidebar = (drawer = false) => (
+    <SpaceSidebar
+      activeSpaceId={snapshot.activeSpaceId}
+      activeSpaceName={activeSpace?.name ?? ''}
+      drawerTitle={drawer ? 'Space Library' : 'Spaces'}
+      isDrawer={drawer}
+      onClose={drawer ? () => setIsSidebarOpen(false) : undefined}
+      onCreateSpace={handleCreateSpace}
+      onDeleteActiveSpace={handleDeleteActiveSpace}
+      onExportSnapshot={handleExportSnapshot}
+      onImportSnapshot={handleImportSnapshot}
+      onResetPreviewData={handleResetPreviewData}
+      onRenameActiveSpace={handleRenameActiveSpace}
+      onSelectSpace={handleSelectSpace}
+      onToggleTheme={handleToggleTheme}
+      saveLabel={saveStatusLabel(saveStatus)}
+      spaces={snapshot.spaces}
+      theme={snapshot.theme}
+    />
+  );
+
   if (!hydrated || !activeSpace) {
     return (
       <main className="loading-shell">
@@ -462,64 +602,76 @@ export default function App() {
     );
   }
 
+  const showMap = !isMobile || mobileView === 'map';
+  const showTodo = !isMobile || mobileView === 'todo';
+
   return (
-    <div className="app-shell">
-      <SpaceSidebar
-        activeSpaceId={snapshot.activeSpaceId}
-        activeSpaceName={activeSpace.name}
-        onCreateSpace={handleCreateSpace}
-        onDeleteActiveSpace={handleDeleteActiveSpace}
-        onExportSnapshot={handleExportSnapshot}
-        onImportSnapshot={handleImportSnapshot}
-        onResetPreviewData={handleResetPreviewData}
-        onRenameActiveSpace={handleRenameActiveSpace}
-        onSelectSpace={handleSelectSpace}
-        onToggleTheme={handleToggleTheme}
-        saveLabel={saveStatusLabel(saveStatus)}
-        spaces={snapshot.spaces}
-        theme={snapshot.theme}
-      />
+    <div className={`app-shell app-shell--${layoutMode}`}>
+      {!isMobile ? renderSidebar(false) : null}
 
       <main className="workspace">
         <header className="workspace__header">
-          <div>
-            <h2>{activeSpace.name || 'Untitled Space'}</h2>
-            {webPreview ? (
-              <p className="workspace__subhead">
-                Web preview mode. Your data stays in this browser unless you export JSON.
+          <div className="workspace__title">
+            <div>
+              <h2>{activeSpace.name || 'Untitled Space'}</h2>
+              <p className="workspace__summary">
+                <span className="summary-card">{activeSpace.nodes.length} points</span>
+                <span className="summary-card">
+                  {activeSpace.todos.filter((todo) => !todo.completed).length} open tasks
+                </span>
               </p>
+              {webPreview ? (
+                <p className="workspace__subhead">
+                  Web preview mode. Your data stays in this browser unless you export JSON.
+                </p>
+              ) : null}
+            </div>
+
+            {isMobile ? (
+              <button className="button workspace__spaces-button" onClick={() => setIsSidebarOpen(true)} type="button">
+                Spaces
+              </button>
             ) : null}
           </div>
         </header>
 
         {bannerMessage ? <div className="workspace__banner">{bannerMessage}</div> : null}
 
-        <div className="workspace__grid">
-          <WhyTodoPanel
-            onAddTodo={handleAddTodo}
-            onChangeTodoText={handleChangeTodoText}
-            onDeleteTodo={handleDeleteTodo}
-            onToggleTodo={handleToggleTodo}
-            space={activeSpace}
-          />
+        <div
+          className={`workspace__grid ${showMap && showTodo ? '' : 'workspace__grid--single'}`}
+        >
+          {showTodo ? (
+            <WhyTodoPanel
+              isMobile={isMobile}
+              onAddTodo={handleAddTodo}
+              onChangeTodoText={handleChangeTodoText}
+              onDeleteTodo={handleDeleteTodo}
+              onToggleTodo={handleToggleTodo}
+              space={activeSpace}
+            />
+          ) : null}
 
-          <BrainCanvas
-            editingNodeId={editingNodeId}
-            onDeleteNodes={handleDeleteNodes}
-            isEditMode={isMapEditing}
-            onAddNeuron={handleAddNeuron}
-            onFinishRenameNode={handleFinishRenameNode}
-            onNodeLabelChange={handleNodeLabelChange}
-            onPersistNodePositions={handlePersistNodePositions}
-            onStartRenameNode={handleStartRenameNode}
-            onToggleEditMode={() => {
-              setEditingNodeId(null);
-              setIsMapEditing((current) => !current);
-            }}
-            onToggleConnection={handleToggleConnection}
-            onViewportChange={handleViewportChange}
-            space={activeSpace}
-          />
+          {showMap ? (
+            <BrainCanvas
+              editingNodeId={editingNodeId}
+              isEditMode={isMapEditing}
+              isMobile={isMobile}
+              onAddNeuron={handleAddNeuron}
+              onDeleteNodes={handleDeleteNodes}
+              onFinishRenameNode={handleFinishRenameNode}
+              onNodeLabelChange={handleNodeLabelChange}
+              onPersistNodePositions={handlePersistNodePositions}
+              onRequestDeleteNodes={handleRequestDeleteNodes}
+              onStartRenameNode={handleStartRenameNode}
+              onToggleConnection={handleToggleConnection}
+              onToggleEditMode={() => {
+                setEditingNodeId(null);
+                setIsMapEditing((current) => !current);
+              }}
+              onViewportChange={handleViewportChange}
+              space={activeSpace}
+            />
+          ) : null}
         </div>
 
         {showWelcome ? (
@@ -571,6 +723,54 @@ export default function App() {
           </section>
         ) : null}
       </main>
+
+      {isMobile ? (
+        <>
+          <nav aria-label="Primary mobile navigation" className="mobile-nav">
+            <button
+              className={`mobile-nav__item ${mobileView === 'map' ? 'is-active' : ''}`}
+              onClick={() => setMobileView('map')}
+              type="button"
+            >
+              Map
+            </button>
+            <button
+              className={`mobile-nav__item ${mobileView === 'todo' ? 'is-active' : ''}`}
+              onClick={() => setMobileView('todo')}
+              type="button"
+            >
+              To-Do
+            </button>
+            <button
+              className={`mobile-nav__item ${isSidebarOpen ? 'is-active' : ''}`}
+              onClick={() => setIsSidebarOpen(true)}
+              type="button"
+            >
+              Spaces
+            </button>
+          </nav>
+
+          {isSidebarOpen ? (
+            <div className="sheet-backdrop" onClick={() => setIsSidebarOpen(false)} role="presentation">
+              <div className="sheet-shell" onClick={(event) => event.stopPropagation()}>
+                {renderSidebar(true)}
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {dialogState ? (
+        <AppDialog
+          confirmLabel={dialogState.confirmLabel}
+          message={dialogState.message}
+          onCancel={closeDialog}
+          onConfirm={dialogState.onConfirm}
+          title={dialogState.title}
+          tone={dialogState.tone}
+          variant={dialogState.variant}
+        />
+      ) : null}
     </div>
   );
 }

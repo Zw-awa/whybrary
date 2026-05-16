@@ -3,6 +3,7 @@ import type { Space } from '../types';
 import { FloatingActions } from './FloatingActions';
 
 type WhyTodoPanelProps = {
+  isMobile?: boolean;
   space: Space;
   onAddTodo: (text: string) => void;
   onChangeTodoText: (todoId: string, nextText: string) => void;
@@ -11,6 +12,7 @@ type WhyTodoPanelProps = {
 };
 
 export function WhyTodoPanel({
+  isMobile = false,
   space,
   onAddTodo,
   onChangeTodoText,
@@ -24,6 +26,9 @@ export function WhyTodoPanel({
 
   const submitDraft = () => {
     const nextText = draft.trim();
+    if (!nextText) {
+      return;
+    }
 
     onAddTodo(nextText);
     setDraft('');
@@ -168,6 +173,7 @@ export function WhyTodoPanel({
             },
           ]}
           containerRef={listRef}
+          isMobile={isMobile}
         />
       </div>
     </section>

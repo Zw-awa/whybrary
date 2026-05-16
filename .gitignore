@@ -13,6 +13,8 @@ pnpm-debug.log*
 .env.*
 .cache/
 .npm-cache/
+.gradle-android-user-home/
+.kotlin-daemon/
 .temp/
 .tmp/
 .idea/

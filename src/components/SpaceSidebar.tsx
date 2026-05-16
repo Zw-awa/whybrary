@@ -4,8 +4,11 @@ type SpaceSidebarProps = {
   spaces: Space[];
   activeSpaceId: string | null;
   activeSpaceName: string;
+  drawerTitle?: string;
+  isDrawer?: boolean;
   theme: ThemeMode;
   saveLabel: string;
+  onClose?: () => void;
   onExportSnapshot: () => void;
   onImportSnapshot: () => void;
   onResetPreviewData: () => void;
@@ -20,8 +23,11 @@ export function SpaceSidebar({
   spaces,
   activeSpaceId,
   activeSpaceName,
+  drawerTitle = 'Spaces',
+  isDrawer = false,
   theme,
   saveLabel,
+  onClose,
   onExportSnapshot,
   onImportSnapshot,
   onResetPreviewData,
@@ -32,12 +38,23 @@ export function SpaceSidebar({
   onToggleTheme,
 }: SpaceSidebarProps) {
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isDrawer ? 'sidebar--drawer' : ''}`}>
       <div className="sidebar__brand">
         <div>
+          <p className="eyebrow">{drawerTitle}</p>
           <h1>Whybrary</h1>
           <p className="sidebar__status-note">{saveLabel}</p>
         </div>
+        {onClose ? (
+          <button
+            aria-label="Close spaces"
+            className="sidebar__close"
+            onClick={onClose}
+            type="button"
+          >
+            Close
+          </button>
+        ) : null}
       </div>
 
       <div className="sidebar__controls">

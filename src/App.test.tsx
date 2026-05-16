@@ -98,9 +98,19 @@ function stubMatchMedia(matches = false) {
   });
 }
 
+function setWindowWidth(width: number) {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: width,
+  });
+  window.dispatchEvent(new Event('resize'));
+}
+
 describe('App integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setWindowWidth(1280);
     stubMatchMedia(false);
     document.documentElement.dataset.theme = '';
     loadSnapshotMock.mockResolvedValue(makeSnapshot());
@@ -119,6 +129,17 @@ describe('App integration', () => {
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(screen.getByRole('button', { name: 'Use Light Theme' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Whybrary web welcome' })).toBeTruthy();
+  });
+
+  it('switches to mobile navigation and opens the spaces sheet on narrow screens', async () => {
+    setWindowWidth(390);
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+    expect(screen.getByRole('navigation', { name: 'Primary mobile navigation' })).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Spaces' })[0]);
+    expect(screen.getByRole('button', { name: 'Close spaces' })).toBeTruthy();
   });
 
   it('falls back to the default state when snapshot loading fails', async () => {
@@ -195,7 +216,6 @@ describe('App integration', () => {
       this.onchange?.(new Event('change'));
     });
 
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     const originalCreateElement = document.createElement.bind(document);
     const createElementSpy = vi.spyOn(document, 'createElement');
     createElementSpy.mockImplementation(((tagName: string) => {
@@ -216,7 +236,6 @@ describe('App integration', () => {
 
     expect(await screen.findByRole('heading', { name: 'Imported Space' })).toBeTruthy();
     expect(clickMock).toHaveBeenCalledOnce();
-    expect(alertSpy).not.toHaveBeenCalled();
     expect(screen.getByText('Snapshot imported successfully.')).toBeTruthy();
   });
 
@@ -230,14 +249,13 @@ describe('App integration', () => {
   });
 
   it('resets browser-local preview data to a fresh default state', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset Browser Data' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Data' }));
 
     expect(await screen.findByRole('heading', { name: 'My First Space' })).toBeTruthy();
-    expect(confirmSpy).toHaveBeenCalledOnce();
     expect(clearPreviewSnapshotMock).toHaveBeenCalledOnce();
     expect(screen.getByText('Browser-local snapshot reset.')).toBeTruthy();
   });
@@ -267,14 +285,13 @@ describe('App integration', () => {
   });
 
   it('replaces the last remaining space with a fresh default space on delete', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<App />);
 
     await screen.findByRole('heading', { name: 'Loaded Space' });
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Space' }));
 
     expect(await screen.findByRole('heading', { name: 'My First Space' })).toBeTruthy();
-    expect(confirmSpy).toHaveBeenCalledOnce();
   });
 
   it('removes connected edges when the canvas deletes a node', async () => {

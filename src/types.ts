@@ -1,4 +1,6 @@
 export type ThemeMode = 'light' | 'dark';
+export type DeviceLayoutMode = 'phone' | 'tablet' | 'desktop';
+export type MobilePrimaryView = 'map' | 'todo' | 'spaces';
 
 export type ViewportState = {
   x: number;

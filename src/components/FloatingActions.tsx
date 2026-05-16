@@ -11,6 +11,7 @@ type FloatingAction = {
 type FloatingActionsProps = {
   actions: FloatingAction[];
   containerRef: RefObject<HTMLDivElement>;
+  isMobile?: boolean;
 };
 
 type Position = {
@@ -33,7 +34,11 @@ function clampPosition(
   };
 }
 
-export function FloatingActions({ actions, containerRef }: FloatingActionsProps) {
+export function FloatingActions({
+  actions,
+  containerRef,
+  isMobile = false,
+}: FloatingActionsProps) {
   const dockRef = useRef<HTMLDivElement>(null);
   const dragOffsetRef = useRef<Position | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -74,7 +79,7 @@ export function FloatingActions({ actions, containerRef }: FloatingActionsProps)
   }, [containerRef]);
 
   useEffect(() => {
-    if (!dragging) {
+    if (!dragging || isMobile) {
       return;
     }
 
@@ -111,9 +116,13 @@ export function FloatingActions({ actions, containerRef }: FloatingActionsProps)
       window.removeEventListener('pointerup', handleEnd);
       window.removeEventListener('pointercancel', handleEnd);
     };
-  }, [containerRef, dragging]);
+  }, [containerRef, dragging, isMobile]);
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (isMobile) {
+      return;
+    }
+
     const dock = dockRef.current;
     if (!dock) {
       return;
@@ -129,13 +138,15 @@ export function FloatingActions({ actions, containerRef }: FloatingActionsProps)
 
   return (
     <div
-      className={`floating-actions ${dragging ? 'is-dragging' : ''}`}
+      className={`floating-actions ${dragging ? 'is-dragging' : ''} ${isMobile ? 'is-mobile' : ''}`}
       ref={dockRef}
-      style={position ? { left: position.x, top: position.y } : undefined}
+      style={isMobile ? undefined : position ? { left: position.x, top: position.y } : undefined}
     >
-      <div className="floating-actions__grip" onPointerDown={handlePointerDown}>
-        Drag
-      </div>
+      {!isMobile ? (
+        <div className="floating-actions__grip" onPointerDown={handlePointerDown}>
+          Drag
+        </div>
+      ) : null}
 
       {actions.map((action) => (
         <button

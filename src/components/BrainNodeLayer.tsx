@@ -7,12 +7,14 @@ const LABEL_OFFSET = 18;
 type BrainNodeLayerProps = {
   editingNodeId: string | null;
   isEditMode: boolean;
+  isMobile?: boolean;
   nodes: SimNode[];
   onDotClick: (event: ReactMouseEvent<HTMLButtonElement>, nodeId: string) => void;
   onFinishRenameNode: () => void;
   onLabelClick: (event: ReactMouseEvent<HTMLButtonElement>, nodeId: string) => void;
   onNodeLabelChange: (nodeId: string, nextLabel: string) => void;
   onNodePointerDown: (event: ReactPointerEvent<HTMLDivElement>, nodeId: string) => void;
+  onNodeLongPress?: (nodeId: string) => void;
   onStartRenameNode: (nodeId: string) => void;
   selectedNodeId: string | null;
   spaceNodes: BrainNode[];
@@ -22,12 +24,14 @@ type BrainNodeLayerProps = {
 export function BrainNodeLayer({
   editingNodeId,
   isEditMode,
+  isMobile = false,
   nodes,
   onDotClick,
   onFinishRenameNode,
   onLabelClick,
   onNodeLabelChange,
   onNodePointerDown,
+  onNodeLongPress,
   onStartRenameNode,
   selectedNodeId,
   spaceNodes,
@@ -39,6 +43,25 @@ export function BrainNodeLayer({
         const editing = isEditMode && editingNodeId === node.id;
         const sourceNode = spaceNodes.find((item) => item.id === node.id);
         const label = sourceNode?.data.label ?? node.label;
+        let longPressTimer: number | null = null;
+
+        const clearLongPress = () => {
+          if (longPressTimer !== null) {
+            window.clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+        };
+
+        const startLongPress = () => {
+          if (!isMobile || !isEditMode || !onNodeLongPress) {
+            return;
+          }
+
+          longPressTimer = window.setTimeout(() => {
+            onNodeLongPress(node.id);
+            longPressTimer = null;
+          }, 420);
+        };
 
         return (
           <div
@@ -57,6 +80,16 @@ export function BrainNodeLayer({
               onDoubleClick={(event) => {
                 event.stopPropagation();
                 onStartRenameNode(node.id);
+              }}
+              onPointerCancel={clearLongPress}
+              onPointerDown={startLongPress}
+              onPointerLeave={clearLongPress}
+              onPointerUp={clearLongPress}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                if (isMobile && onNodeLongPress) {
+                  onNodeLongPress(node.id);
+                }
               }}
               type="button"
             >
@@ -91,6 +124,10 @@ export function BrainNodeLayer({
                   event.stopPropagation();
                   onStartRenameNode(node.id);
                 }}
+                onPointerCancel={clearLongPress}
+                onPointerDown={startLongPress}
+                onPointerLeave={clearLongPress}
+                onPointerUp={clearLongPress}
                 style={{
                   transform: `translateY(${LABEL_OFFSET}px)`,
                 }}

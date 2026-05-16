@@ -65,9 +65,9 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            bundle_args: "--bundles app,dmg"
+            bundle_args: "--bundles dmg"
           - platform: ubuntu-22.04
-            bundle_args: "--bundles appimage,deb"
+            bundle_args: "--bundles deb,rpm,appimage"
           - platform: windows-latest
             bundle_args: "--bundles nsis"
 
@@ -94,13 +94,19 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      - name: Install Linux system dependencies
+      - name: Install Linux packaging dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf
 
@@ -170,7 +176,7 @@ jobs:
           Remove-Item certificate/tempCert.txt
           Import-PfxCertificate -FilePath certificate/certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText) | Out-Null
 
-      - name: Publish desktop bundles
+      - name: Publish direct-download bundles
         uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -195,3 +201,99 @@ jobs:
           projectPath: .
           args: ${{ matrix.bundle_args }}
           retryAttempts: 2
+
+  publish-android-apk:
+    needs:
+      - verify-version
+      - publish-tauri
+    environment:
+      name: release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: Install Android packages
+        shell: pwsh
+        run: |
+          sdkmanager `
+            "platform-tools" `
+            "platforms;android-36" `
+            "build-tools;36.0.0" `
+            "ndk;30.0.14904198"
+
+      - name: Normalize Android environment
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ANDROID_SDK_ROOT)) {
+            throw "ANDROID_SDK_ROOT is not set after setup-android."
+          }
+          "ANDROID_HOME=$env:ANDROID_SDK_ROOT" >> $env:GITHUB_ENV
+          "ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT" >> $env:GITHUB_ENV
+          "NDK_HOME=$env:ANDROID_SDK_ROOT\ndk\30.0.14904198" >> $env:GITHUB_ENV
+
+      - name: Decode Android keystore
+        shell: pwsh
+        run: |
+          $keystorePath = "$env:RUNNER_TEMP\whybrary-release.jks"
+          [IO.File]::WriteAllBytes(
+            $keystorePath,
+            [Convert]::FromBase64String("${{ secrets.ANDROID_KEYSTORE_BASE64 }}")
+          )
+          "ANDROID_KEYSTORE_PATH=$keystorePath" >> $env:GITHUB_ENV
+
+      - name: Build and sign Android APK
+        shell: pwsh
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: npm run android:build:signed
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whybrary-android-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/arm64/release/whybrary-*-arm64-release.apk
+
+      - name: Upload signed APK to GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $apk = Get-ChildItem "src-tauri\gen\android\app\build\outputs\apk\arm64\release\whybrary-*-arm64-release.apk" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $apk) {
+            throw "Signed APK not found."
+          }
+
+          gh release upload "${{ github.ref_name }}" $apk.FullName --clobber

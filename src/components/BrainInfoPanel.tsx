@@ -3,8 +3,10 @@ import type { SimNode } from '../lib/brainPhysics';
 type BrainInfoPanelProps = {
   edgesCount: number;
   infoSelection: string[];
+  isMobile?: boolean;
   isMultiSelect: boolean;
   nodes: SimNode[];
+  onClose?: () => void;
   onClearSelection: () => void;
   onDeleteSelection: () => void;
   onNodeClick: (nodeId: string) => void;
@@ -16,8 +18,10 @@ type BrainInfoPanelProps = {
 export function BrainInfoPanel({
   edgesCount,
   infoSelection,
+  isMobile = false,
   isMultiSelect,
   nodes,
+  onClose,
   onClearSelection,
   onDeleteSelection,
   onNodeClick,
@@ -27,13 +31,20 @@ export function BrainInfoPanel({
 }: BrainInfoPanelProps) {
   return (
     <aside
-      className="graph-info"
+      className={`graph-info ${isMobile ? 'graph-info--sheet' : ''}`}
       onPointerDown={(event) => event.stopPropagation()}
       onWheelCapture={(event) => event.stopPropagation()}
     >
-      <div className="graph-info__summary">
-        <strong>{nodes.length} nodes</strong>
-        <span>{edgesCount} links</span>
+      <div className="graph-info__topbar">
+        <div className="graph-info__summary">
+          <strong>{nodes.length} nodes</strong>
+          <span>{edgesCount} links</span>
+        </div>
+        {onClose ? (
+          <button className="graph-info__dismiss" onClick={onClose} type="button">
+            Close
+          </button>
+        ) : null}
       </div>
 
       <div className="graph-info__actions">

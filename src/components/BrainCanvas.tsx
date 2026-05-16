@@ -11,7 +11,9 @@ import { useBrainViewport } from './useBrainViewport';
 
 type BrainCanvasProps = {
   editingNodeId: string | null;
+  isMobile?: boolean;
   onDeleteNodes: (nodeIds: string[]) => void;
+  onRequestDeleteNodes?: (nodeIds: string[], labels: string[]) => void;
   isEditMode: boolean;
   onAddNeuron: (position?: BrainNode['position']) => BrainNode | null;
   onFinishRenameNode: () => void;
@@ -44,7 +46,9 @@ function appendTransientNode(current: SimNode[], nextNode: BrainNode): SimNode[]
 
 export function BrainCanvas({
   editingNodeId,
+  isMobile = false,
   onDeleteNodes,
+  onRequestDeleteNodes,
   isEditMode,
   onAddNeuron,
   onFinishRenameNode,
@@ -96,6 +100,7 @@ export function BrainCanvas({
     isEditMode,
     nodeLabels: selectionNodeLabels,
     onDeleteNodes,
+    onRequestDeleteSelection: onRequestDeleteNodes,
     onToggleConnection,
     setTrackedNodeId,
   });
@@ -125,6 +130,46 @@ export function BrainCanvas({
     setSimNodes((current) => appendTransientNode(current, nextNode));
   };
 
+  const selectedNodeLabel =
+    selectionNodeLabels.find((node) => node.id === selectedNodeId)?.label || 'Untitled';
+
+  const requestSelectedNodeDeletion = () => {
+    if (!selectedNodeId || !onRequestDeleteNodes) {
+      return;
+    }
+
+    onRequestDeleteNodes([selectedNodeId], [selectedNodeLabel]);
+  };
+
+  const renderAddNodeAction = () => (
+    <button
+      className="button button--accent"
+      onClick={() => {
+        const shell = shellRef.current;
+        if (!shell) {
+          const nextNode = onAddNeuron();
+          if (nextNode) {
+            addTransientNodeToSimulation(nextNode);
+          }
+          return;
+        }
+
+        const nextNode = onAddNeuron(
+          findSpawnPosition(simNodesRef.current, effectiveViewport, {
+            width: shell.clientWidth,
+            height: shell.clientHeight,
+          }),
+        );
+        if (nextNode) {
+          addTransientNodeToSimulation(nextNode);
+        }
+      }}
+      type="button"
+    >
+      New Point
+    </button>
+  );
+
   const withNodeClick = (
     event: React.MouseEvent<HTMLButtonElement>,
     nodeId: string,
@@ -142,55 +187,32 @@ export function BrainCanvas({
     <section className="panel panel--graph">
       <div className="panel__header">
         <h2>Mind Map</h2>
-        <div className="panel__actions">
-          <button
-            className="button"
-            onClick={() => setIsInfoOpen((current) => !current)}
-            type="button"
-          >
-            {isInfoOpen ? 'Hide Info' : 'Show Info'}
-          </button>
-          <button className="button button--ghost" onClick={onToggleEditMode} type="button">
-            {isEditMode ? 'Done' : 'Edit Content'}
-          </button>
-          {isEditMode ? (
+        {!isMobile ? (
+          <div className="panel__actions">
             <button
-              className={`button ${isConnectMode ? 'button--accent' : ''}`}
-              onClick={toggleConnectMode}
+              className="button"
+              onClick={() => setIsInfoOpen((current) => !current)}
               type="button"
             >
-              {isConnectMode ? 'Link Mode On' : 'Link Mode Off'}
+              {isInfoOpen ? 'Hide Info' : 'Show Info'}
             </button>
-          ) : null}
-          {isEditMode ? (
-            <button
-              className="button button--accent"
-              onClick={() => {
-                const shell = shellRef.current;
-                if (!shell) {
-                  const nextNode = onAddNeuron();
-                  if (nextNode) {
-                    addTransientNodeToSimulation(nextNode);
-                  }
-                  return;
-                }
-
-                const nextNode = onAddNeuron(
-                  findSpawnPosition(simNodesRef.current, effectiveViewport, {
-                    width: shell.clientWidth,
-                    height: shell.clientHeight,
-                  }),
-                );
-                if (nextNode) {
-                  addTransientNodeToSimulation(nextNode);
-                }
-              }}
-              type="button"
-            >
-              New Point
+            <button className="button button--ghost" onClick={onToggleEditMode} type="button">
+              {isEditMode ? 'Done' : 'Edit Content'}
             </button>
-          ) : null}
-        </div>
+            {isEditMode ? (
+              <button
+                className={`button ${isConnectMode ? 'button--accent' : ''}`}
+                onClick={toggleConnectMode}
+                type="button"
+              >
+                {isConnectMode ? 'Link Mode On' : 'Link Mode Off'}
+              </button>
+            ) : null}
+            {isEditMode ? renderAddNodeAction() : null}
+          </div>
+        ) : (
+          <div className="graph-mode-pill">{isEditMode ? 'Editing enabled' : 'Viewing mode'}</div>
+        )}
       </div>
 
       <div
@@ -208,8 +230,10 @@ export function BrainCanvas({
           <BrainInfoPanel
             edgesCount={space.edges.length}
             infoSelection={infoSelection}
+            isMobile={isMobile}
             isMultiSelect={isInfoMultiSelect}
             nodes={simNodes}
+            onClose={() => setIsInfoOpen(false)}
             onClearSelection={clearSelection}
             onDeleteSelection={deleteInfoSelection}
             onNodeClick={handleInfoNodeClick}
@@ -224,11 +248,16 @@ export function BrainCanvas({
         <BrainNodeLayer
           editingNodeId={editingNodeId}
           isEditMode={isEditMode}
+          isMobile={isMobile}
           nodes={simNodes}
           onDotClick={withNodeClick}
           onFinishRenameNode={onFinishRenameNode}
           onLabelClick={withNodeClick}
           onNodeLabelChange={onNodeLabelChange}
+          onNodeLongPress={(nodeId) => {
+            setSelectedNodeId(nodeId);
+            onStartRenameNode(nodeId);
+          }}
           onNodePointerDown={(event, nodeId) => {
             event.stopPropagation();
             commitTrackedViewportAndClear();
@@ -242,6 +271,46 @@ export function BrainCanvas({
           spaceNodes={space.nodes}
           viewport={effectiveViewport}
         />
+
+        {isMobile ? (
+          <>
+            {selectedNodeId && isEditMode ? (
+              <div className="graph-selection-bar">
+                <strong>{selectedNodeLabel || 'Untitled'}</strong>
+                <div className="graph-selection-bar__actions">
+                  <button className="button" onClick={() => onStartRenameNode(selectedNodeId)} type="button">
+                    Rename
+                  </button>
+                  <button className="button button--danger" onClick={requestSelectedNodeDeletion} type="button">
+                    Delete
+                  </button>
+                  <button className="button" onClick={() => setSelectedNodeId(null)} type="button">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="graph-mobile-bar">
+              <button className="button" onClick={() => setIsInfoOpen((current) => !current)} type="button">
+                {isInfoOpen ? 'Hide Info' : 'Show Info'}
+              </button>
+              <button className="button button--ghost" onClick={onToggleEditMode} type="button">
+                {isEditMode ? 'Done' : 'Edit'}
+              </button>
+              {isEditMode ? (
+                <button
+                  className={`button ${isConnectMode ? 'button--accent' : ''}`}
+                  onClick={toggleConnectMode}
+                  type="button"
+                >
+                  {isConnectMode ? 'Link On' : 'Link'}
+                </button>
+              ) : null}
+              {isEditMode ? renderAddNodeAction() : null}
+            </div>
+          </>
+        ) : null}
       </div>
     </section>
   );

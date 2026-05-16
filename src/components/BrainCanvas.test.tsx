@@ -129,6 +129,22 @@ describe('BrainCanvas interactions', () => {
     expect(onDeleteNodes).toHaveBeenCalledWith(['a']);
   });
 
+  it('shows the mobile action bar and node actions when rendered in phone mode', async () => {
+    renderCanvas({ isMobile: true });
+
+    expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy();
+    const graphLabels = screen
+      .getAllByRole('button', { name: /Alpha|Beta/ })
+      .filter((node) => node.className.includes('mind-node__label'));
+    const alpha = graphLabels.find((node) => node.textContent === 'Alpha') as HTMLElement;
+    const nodeContainer = alpha.closest('.mind-node') as HTMLElement;
+
+    fireEvent.pointerDown(nodeContainer, { clientX: 100, clientY: 120 });
+
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy();
+  });
+
   it('does not show link mode controls outside edit mode', () => {
     renderCanvas({ isEditMode: false });
 
