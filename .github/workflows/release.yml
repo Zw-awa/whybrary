@@ -168,6 +168,7 @@ jobs:
         shell: pwsh
         run: |
           sdkmanager `
+            --sdk_root="$env:ANDROID_SDK_ROOT" `
             "platform-tools" `
             "platforms;android-36" `
             "build-tools;36.0.0" `
@@ -197,13 +198,31 @@ jobs:
         shell: pwsh
         run: npm run android:prepare
 
-      - name: Build and sign Android APK
+      - name: Verify generated Android project
+        shell: pwsh
+        run: |
+          $required = @(
+            "src-tauri\gen\android\gradle\wrapper\gradle-wrapper.properties",
+            "src-tauri\gen\android\app\build.gradle.kts",
+            "src-tauri\gen\android\tauri.settings.gradle"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "Missing generated Android file: $path"
+            }
+          }
+
+      - name: Build unsigned Android APK
+        shell: pwsh
+        run: npm run android:build:apk
+
+      - name: Sign Android APK
         shell: pwsh
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: npm run android:build:signed
+        run: npm run android:sign:apk
 
       - name: Upload signed APK artifact
         uses: actions/upload-artifact@v4

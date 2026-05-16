@@ -68,7 +68,6 @@ $targets = @(
     @{ Path = $buildSrcGradlePath; Label = 'buildSrc build.gradle.kts' },
     @{ Path = $gradlePropertiesPath; Label = 'gradle.properties' },
     @{ Path = $appGradlePath; Label = 'app/build.gradle.kts' },
-    @{ Path = $tauriSettingsGradlePath; Label = 'tauri.settings.gradle' },
     @{ Path = $buildTaskKotlinPath; Label = 'buildSrc BuildTask.kt' }
 )
 
@@ -76,6 +75,17 @@ foreach ($target in $targets) {
     if (-not (Test-Path $target.Path)) {
         throw "Missing required file for Android patching: $($target.Label)"
     }
+}
+
+for ($attempt = 1; $attempt -le 20; $attempt += 1) {
+    if (Test-Path $tauriSettingsGradlePath) {
+        break
+    }
+    Start-Sleep -Milliseconds 500
+}
+
+if (-not (Test-Path $tauriSettingsGradlePath)) {
+    throw 'Missing required file for Android patching: tauri.settings.gradle'
 }
 
 Write-Output 'Android project directory: src-tauri/gen/android'
