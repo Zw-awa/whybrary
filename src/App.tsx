@@ -82,7 +82,6 @@ export default function App() {
   const [dialogState, setDialogState] = useState<AppDialogState>(null);
   const webPreview = isWebPreview();
   const isMobile = layoutMode === 'phone';
-  const isTablet = layoutMode === 'tablet';
 
   const activeSpace =
     snapshot.spaces.find((space) => space.id === snapshot.activeSpaceId) ?? snapshot.spaces[0];
