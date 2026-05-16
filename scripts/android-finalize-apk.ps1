@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
-将 Android 构建产物整理为稳定、可发布的文件名。
+Renames Android build output to a stable release-style filename.
 
 .DESCRIPTION
-在 APK 已经构建完成后，把默认的 `app-*.apk` 复制成更明确的 Whybrary 命名。
-默认不会删除原始输出，只补充一份稳定文件名的副本。
+Copies the default APK output to a stable Whybrary filename while keeping the
+original Gradle output in place.
 
 .PARAMETER ApkDir
-APK 输出目录。默认指向 arm64 release 目录。
+APK output directory. Defaults to arm64 release output.
 
 .PARAMETER Version
-版本号。默认从 package.json 读取。
+Version string. Defaults to the version in package.json.
 
 .PARAMETER Help
-显示帮助信息。
+Shows help text.
 #>
 
 [CmdletBinding()]
@@ -38,12 +38,12 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 }
 
 if (-not (Test-Path $ApkDir)) {
-    throw "APK 输出目录不存在：$ApkDir"
+    throw 'APK output directory was not found. Run android:build:apk first.'
 }
 
 $sourceApk = Join-Path $ApkDir 'app-arm64-release-unsigned.apk'
 if (-not (Test-Path $sourceApk)) {
-    throw "未找到默认 APK：$sourceApk"
+    throw 'Default APK output was not found. Run android:build:apk first.'
 }
 
 $targetApk = Join-Path $ApkDir "whybrary-$Version-arm64-release-unsigned.apk"
@@ -52,4 +52,4 @@ Copy-Item -Path $sourceApk -Destination $targetApk -Force
 $relativePath = Resolve-Path $targetApk | ForEach-Object {
     $_.Path.Replace("$workspaceRoot\", '')
 }
-Write-Output "已生成稳定命名 APK：$relativePath"
+Write-Output "Generated stable APK name: $relativePath"

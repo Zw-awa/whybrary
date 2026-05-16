@@ -1,21 +1,21 @@
 <#
 .SYNOPSIS
-为 Tauri 生成的 Android 工程统一应用镜像源配置。
+Applies stable Android mirror and generated-project patches.
 
 .DESCRIPTION
-在 `src-tauri/gen/android` 已存在的前提下，修补 Gradle Wrapper 分发地址，以及
-顶层 Gradle / buildSrc 的仓库声明，改为“镜像优先，官方回退”。
-
-默认行为是直接修改生成目录中的文件，并且可重复执行。
+Updates the generated Android Gradle project under src-tauri/gen/android.
+This includes the Gradle distribution URL, repository mirrors, local build
+guardrails, build tools pinning, release minify behavior, vendored tauri-android,
+and the Rust build task override.
 
 .PARAMETER AndroidProjectDir
-Tauri 生成的 Android 工程目录。默认指向 `src-tauri/gen/android`。
+Generated Android project directory. Defaults to src-tauri/gen/android.
 
 .PARAMETER SelfTest
-仅检查目标文件是否存在，并打印将要应用的镜像配置，不执行写入。
+Checks expected files and prints the intended configuration without writing.
 
 .PARAMETER Help
-显示帮助信息。
+Shows help text.
 #>
 
 [CmdletBinding()]
@@ -54,27 +54,27 @@ repositories {
 "@
 
 $targets = @(
-    @{ Path = $gradleWrapperPath; Label = 'Gradle Wrapper'; Type = 'wrapper' },
-    @{ Path = $rootGradlePath; Label = 'Android build.gradle.kts'; Type = 'repositories' },
-    @{ Path = $buildSrcGradlePath; Label = 'Android buildSrc/build.gradle.kts'; Type = 'repositories' },
-    @{ Path = $gradlePropertiesPath; Label = 'Android gradle.properties'; Type = 'properties' },
-    @{ Path = $appGradlePath; Label = 'Android app/build.gradle.kts'; Type = 'buildtools' },
-    @{ Path = $tauriSettingsGradlePath; Label = 'Android tauri.settings.gradle'; Type = 'tauri-settings' },
-    @{ Path = $buildTaskKotlinPath; Label = 'Android buildSrc BuildTask.kt'; Type = 'buildtask' }
+    @{ Path = $gradleWrapperPath; Label = 'Gradle Wrapper' },
+    @{ Path = $rootGradlePath; Label = 'Root build.gradle.kts' },
+    @{ Path = $buildSrcGradlePath; Label = 'buildSrc build.gradle.kts' },
+    @{ Path = $gradlePropertiesPath; Label = 'gradle.properties' },
+    @{ Path = $appGradlePath; Label = 'app/build.gradle.kts' },
+    @{ Path = $tauriSettingsGradlePath; Label = 'tauri.settings.gradle' },
+    @{ Path = $buildTaskKotlinPath; Label = 'buildSrc BuildTask.kt' }
 )
 
 foreach ($target in $targets) {
     if (-not (Test-Path $target.Path)) {
-        throw "目标文件不存在。请先执行 android:init 或 android:prepare。"
+        throw "Missing required file for Android patching: $($target.Label)"
     }
 }
 
-Write-Output "Android 工程目录：src-tauri/gen/android"
-Write-Output "Gradle 镜像：$desiredDistributionUrl"
-Write-Output "Maven 镜像优先：阿里云 Google / public，保留 google() 和 mavenCentral() 作为回退。"
+Write-Output 'Android project directory: src-tauri/gen/android'
+Write-Output "Gradle mirror: $desiredDistributionUrl"
+Write-Output 'Repository strategy: Aliyun mirrors first, official repos kept as fallback.'
 
 if ($SelfTest) {
-    Write-Output "SelfTest 通过：目标文件已找到，未执行写入。"
+    Write-Output 'SelfTest passed. No files were modified.'
     exit 0
 }
 
@@ -83,7 +83,7 @@ function Update-WrapperFile {
 
     $content = Get-Content $Path -Raw
     if ($content -match [regex]::Escape($desiredDistributionUrl)) {
-        Write-Output "未变更：Gradle Wrapper 已使用镜像。"
+        Write-Output 'No change: Gradle wrapper already uses the mirror.'
         return
     }
 
@@ -95,35 +95,34 @@ function Update-WrapperFile {
     )
 
     if ($updated -eq $content) {
-        throw "未找到可替换的 distributionUrl。"
+        throw 'Could not replace distributionUrl.'
     }
 
     Set-Content -Path $Path -Value $updated -Encoding UTF8
-    Write-Output "已更新：Gradle Wrapper 镜像。"
+    Write-Output 'Updated: Gradle wrapper mirror.'
 }
 
 function Update-RepositoriesFile {
-    param([string]$Path)
+    param(
+        [string]$Path,
+        [string]$Label
+    )
 
     $content = Get-Content $Path -Raw
     if ($content -match 'maven\.aliyun\.com/repository/google' -and $content -match 'maven\.aliyun\.com/repository/public') {
-        Write-Output "未变更：$Path 已包含镜像仓库。"
+        Write-Output "No change: $Label already contains mirror repositories."
         return
     }
 
     $pattern = 'repositories\s*\{\s*google\(\)\s*mavenCentral\(\)\s*\}'
-    $updated = [regex]::Replace(
-        $content,
-        $pattern,
-        $repositoryBlock
-    )
+    $updated = [regex]::Replace($content, $pattern, $repositoryBlock)
 
     if ($updated -eq $content) {
-        throw "未找到可替换的 repositories 块。"
+        throw "Could not replace repositories block in $Label."
     }
 
     Set-Content -Path $Path -Value $updated -Encoding UTF8
-    Write-Output "已更新：$Path 的仓库镜像配置。"
+    Write-Output "Updated: $Label repository mirrors."
 }
 
 function Update-GradlePropertiesFile {
@@ -139,7 +138,7 @@ function Update-GradlePropertiesFile {
         $content -match '^android\.builder\.sdkDownload=false$' -and
         $content -match '^android\.javaCompile\.suppressSourceTargetDeprecationWarning=true$'
     ) {
-        Write-Output "未变更：Gradle 本地构建保护项已就位。"
+        Write-Output 'No change: Gradle local build guardrails are already set.'
         return
     }
 
@@ -160,7 +159,7 @@ function Update-GradlePropertiesFile {
     }
 
     Set-Content -Path $Path -Value $updated -Encoding UTF8
-    Write-Output "已更新：Gradle 本地构建保护项。"
+    Write-Output 'Updated: Gradle local build guardrails.'
 }
 
 function Update-AppBuildToolsVersion {
@@ -170,7 +169,7 @@ function Update-AppBuildToolsVersion {
     $desiredLine = '    buildToolsVersion = "36.0.0"'
 
     if ($content -match 'buildToolsVersion\s*=\s*"36\.0\.0"') {
-        Write-Output "未变更：已显式指定 buildToolsVersion=36.0.0。"
+        Write-Output 'No change: buildToolsVersion is already pinned to 36.0.0.'
         return
     }
 
@@ -183,10 +182,10 @@ function Update-AppBuildToolsVersion {
         )
     }
     else {
-        $marker = "android {"
+        $marker = 'android {'
         $markerIndex = $content.IndexOf($marker)
         if ($markerIndex -lt 0) {
-            throw "未找到可插入 buildToolsVersion 的 android 块。"
+            throw 'Could not find android block for buildToolsVersion insertion.'
         }
 
         $insertIndex = $markerIndex + $marker.Length
@@ -194,7 +193,7 @@ function Update-AppBuildToolsVersion {
     }
 
     Set-Content -Path $Path -Value $updated -Encoding UTF8
-    Write-Output "已更新：显式指定 buildToolsVersion=36.0.0。"
+    Write-Output 'Updated: buildToolsVersion pinned to 36.0.0.'
 }
 
 function Update-ReleaseMinifySetting {
@@ -202,7 +201,7 @@ function Update-ReleaseMinifySetting {
 
     $content = Get-Content $Path -Raw
     if ($content -match 'getByName\("release"\)\s*\{[\s\S]*?isMinifyEnabled = false') {
-        Write-Output "未变更：release 已禁用 minify。"
+        Write-Output 'No change: release minify is already disabled.'
         return
     }
 
@@ -214,11 +213,11 @@ function Update-ReleaseMinifySetting {
     )
 
     if ($updated -eq $content) {
-        throw "未找到 release 构建类型里的 isMinifyEnabled 配置。"
+        throw 'Could not locate release minify configuration.'
     }
 
     Set-Content -Path $Path -Value $updated -Encoding UTF8
-    Write-Output "已更新：release 禁用 minify，用于规避启动期被 R8 裁剪。"
+    Write-Output 'Updated: release minify disabled.'
 }
 
 function Resolve-TauriVersion {
@@ -227,7 +226,7 @@ function Resolve-TauriVersion {
     $content = Get-Content $Path -Raw
     $match = [regex]::Match($content, 'name = "tauri"\s+version = "([^"]+)"')
     if (-not $match.Success) {
-        throw "未能从 Cargo.lock 解析 tauri 版本。"
+        throw 'Could not parse tauri version from Cargo.lock.'
     }
 
     return $match.Groups[1].Value
@@ -246,7 +245,7 @@ function Resolve-TauriAndroidSourceDir {
         Select-Object -First 1
 
     if (-not $candidate) {
-        throw "未找到 tauri-$tauriVersion 的 Android 模块源码。"
+        throw "Could not find tauri-$tauriVersion Android module source."
     }
 
     return $candidate
@@ -272,7 +271,7 @@ include ':tauri-android'
 project(':tauri-android').projectDir = new File("$escapedPath")
 "@
     Set-Content -Path $SettingsPath -Value $settingsContent -Encoding UTF8
-    Write-Output "已同步：tauri-android 本地 vendor 模块。"
+    Write-Output 'Updated: vendored tauri-android module.'
 }
 
 function Update-BuildTaskKotlin {
@@ -280,7 +279,7 @@ function Update-BuildTaskKotlin {
 
     $content = Get-Content $Path -Raw
     if ($content -match 'android:rust:release:aarch64') {
-        Write-Output "未变更：BuildTask.kt 已改为调用仓库内稳定 Rust Android 构建脚本。"
+        Write-Output 'No change: BuildTask.kt already uses repository-local Rust Android scripts.'
         return
     }
 
@@ -298,7 +297,7 @@ function Update-BuildTaskKotlin {
 
     $updated = [regex]::Replace($content, $pattern, $replacement)
     if ($updated -eq $content) {
-        throw "未找到 BuildTask.kt 中的 tauri android android-studio-script 调用。"
+        throw 'Could not find the original tauri Android build invocation in BuildTask.kt.'
     }
 
     $updated = [regex]::Replace(
@@ -308,12 +307,12 @@ function Update-BuildTaskKotlin {
     )
 
     Set-Content -Path $Path -Value $updated -Encoding UTF8
-    Write-Output "已更新：BuildTask.kt 改为走仓库内稳定 Rust Android 构建脚本。"
+    Write-Output 'Updated: BuildTask.kt now uses repository-local Rust Android scripts.'
 }
 
 Update-WrapperFile -Path $gradleWrapperPath
-Update-RepositoriesFile -Path $rootGradlePath
-Update-RepositoriesFile -Path $buildSrcGradlePath
+Update-RepositoriesFile -Path $rootGradlePath -Label 'root Gradle config'
+Update-RepositoriesFile -Path $buildSrcGradlePath -Label 'buildSrc Gradle config'
 Update-GradlePropertiesFile -Path $gradlePropertiesPath
 Update-AppBuildToolsVersion -Path $appGradlePath
 Update-ReleaseMinifySetting -Path $appGradlePath
@@ -322,4 +321,4 @@ Sync-TauriAndroidVendor -SourceDir $tauriSourceDir -VendorDir $tauriVendorDir -S
 Update-AppBuildToolsVersion -Path (Join-Path $tauriVendorDir 'build.gradle.kts')
 Update-BuildTaskKotlin -Path $buildTaskKotlinPath
 
-Write-Output "镜像配置应用完成。"
+Write-Output 'Android mirror and patch application complete.'

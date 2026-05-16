@@ -1,18 +1,16 @@
 <#
 .SYNOPSIS
-为 Whybrary 的 Android 命令注入稳定环境变量。
+Loads stable Android environment variables for Whybrary commands.
 
 .DESCRIPTION
-优先读取用户已经设置好的 `JAVA_HOME`、`ANDROID_HOME`、`ANDROID_SDK_ROOT`、`NDK_HOME`。
-如果缺失则报错，而不是在仓库里硬编码绝对路径。
-
-脚本只把项目内的 Gradle/Kotlin/TEMP 缓存目录固定到工作区，避免污染用户全局目录。
+Reads user-configured JAVA_HOME, ANDROID_HOME, ANDROID_SDK_ROOT, and NDK_HOME.
+Then pins Gradle, Kotlin daemon, and temp caches to workspace-local directories.
 
 .PARAMETER Command
-要执行的命令字符串，例如 `npm run android:mirror` 或 `tauri android build --apk`。
+Command string to execute after the environment is prepared.
 
 .PARAMETER Help
-显示帮助信息。
+Shows help text.
 #>
 
 [CmdletBinding()]
@@ -41,7 +39,7 @@ foreach ($name in $requiredEnvNames) {
         $value = [System.Environment]::GetEnvironmentVariable($name, 'Machine')
     }
     if ([string]::IsNullOrWhiteSpace($value)) {
-        throw "缺少环境变量：$name。请先在用户环境变量中设置。"
+        throw "Missing environment variable: $name"
     }
 
     Set-Item -Path "Env:$name" -Value $value
@@ -57,9 +55,9 @@ New-Item -ItemType Directory -Force -Path $env:GRADLE_USER_HOME | Out-Null
 New-Item -ItemType Directory -Force -Path $env:KOTLIN_DAEMON_CLIENT_ALIVE_PATH | Out-Null
 New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
 
-Write-Output "已加载 Android 用户环境变量：JAVA_HOME / ANDROID_HOME / ANDROID_SDK_ROOT / NDK_HOME"
-Write-Output "使用项目内缓存目录：.gradle-android-user-home / .kotlin-daemon / .tmp"
-Write-Output "执行命令：$Command"
+Write-Output 'Loaded Android user environment variables.'
+Write-Output 'Using workspace-local cache directories.'
+Write-Output "Executing command: $Command"
 
 $global:LASTEXITCODE = 0
 Invoke-Expression $Command

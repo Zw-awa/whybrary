@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
-为指定 Android ABI 构建 Rust 动态库，并复制到 jniLibs。
+Builds the Rust Android shared library for a target ABI and copies it into jniLibs.
 
 .DESCRIPTION
-直接运行 cargo 构建 Whybrary 的 Rust 动态库，避免依赖 Tauri CLI 的
-android-studio-script / WebSocket 协调流程。
+Runs cargo directly for the requested Android target and avoids the Tauri CLI
+android-studio-script / WebSocket coordination path.
 
 .PARAMETER Target
-Android Rust target：aarch64 / armv7 / i686 / x86_64
+Android Rust target: aarch64 / armv7 / i686 / x86_64
 
 .PARAMETER Release
-是否构建 release 版本。
+Builds the release profile when provided.
 
 .PARAMETER Help
-显示帮助信息。
+Shows help text.
 #>
 
 [CmdletBinding()]
@@ -70,13 +70,13 @@ $clangPath = Join-Path $env:NDK_HOME "toolchains\llvm\prebuilt\windows-x86_64\bi
 $llvmArPath = Join-Path $env:NDK_HOME 'toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe'
 
 if (-not (Test-Path $linkerPath)) {
-    throw "未找到 Android linker，请检查 NDK_HOME。"
+    throw 'Android linker was not found. Check NDK_HOME.'
 }
 if (-not (Test-Path $clangPath)) {
-    throw "未找到 Android clang，请检查 NDK_HOME。"
+    throw 'Android clang was not found. Check NDK_HOME.'
 }
 if (-not (Test-Path $llvmArPath)) {
-    throw "未找到 llvm-ar，请检查 NDK_HOME。"
+    throw 'llvm-ar was not found. Check NDK_HOME.'
 }
 
 $upperTarget = $targetTriple.ToUpper().Replace('-', '_')
@@ -89,10 +89,10 @@ Set-Item -Path "Env:$envVarRustflags" -Value '-Clink-arg=-landroid -Clink-arg=-l
 Set-Item -Path "Env:$envVarAr" -Value $llvmArPath
 
 # Help cc-rs based native dependencies such as libsqlite3-sys resolve the Android toolchain.
-Set-Item -Path "Env:CC" -Value $clangPath
-Set-Item -Path "Env:AR" -Value $llvmArPath
-Set-Item -Path "Env:TARGET_CC" -Value $clangPath
-Set-Item -Path "Env:TARGET_AR" -Value $llvmArPath
+Set-Item -Path 'Env:CC' -Value $clangPath
+Set-Item -Path 'Env:AR' -Value $llvmArPath
+Set-Item -Path 'Env:TARGET_CC' -Value $clangPath
+Set-Item -Path 'Env:TARGET_AR' -Value $llvmArPath
 Set-Item -Path "Env:CC_$targetTriple" -Value $clangPath
 Set-Item -Path "Env:AR_$targetTriple" -Value $llvmArPath
 Set-Item -Path ("Env:CC_" + $targetTriple.Replace('-', '_')) -Value $clangPath
@@ -103,7 +103,7 @@ if ($Release) {
     $cargoArgs += '--release'
 }
 
-Write-Output "开始构建 Rust Android 动态库：$Target"
+Write-Output "Building Rust Android shared library for target: $Target"
 & cargo @cargoArgs
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
@@ -112,7 +112,7 @@ if ($LASTEXITCODE -ne 0) {
 $profileDir = if ($Release) { 'release' } else { 'debug' }
 $builtLib = Join-Path $workspaceRoot "src-tauri\target\$targetTriple\$profileDir\libwhybrary_lib.so"
 if (-not (Test-Path $builtLib)) {
-    throw "未找到 Rust 动态库产物。"
+    throw 'Rust shared library output was not found.'
 }
 
 $jniAbiDir = Join-Path $jniLibsRoot $targetAbi
@@ -124,4 +124,4 @@ if (Test-Path $destLib) {
 }
 
 Copy-Item -Path $builtLib -Destination $destLib -Force
-Write-Output "已同步 JNI 动态库：app/src/main/jniLibs/$targetAbi/libwhybrary_lib.so"
+Write-Output "Copied JNI library to app/src/main/jniLibs/$targetAbi/libwhybrary_lib.so"
