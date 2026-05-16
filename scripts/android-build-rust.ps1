@@ -32,7 +32,11 @@ if ($Help) {
 
 $ErrorActionPreference = 'Stop'
 
-$workspaceRoot = Split-Path -Parent $PSScriptRoot
+$scriptRoot = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
+    $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$workspaceRoot = Split-Path -Parent $scriptRoot
 $cargoManifest = Join-Path $workspaceRoot 'src-tauri\Cargo.toml'
 $androidProjectDir = Join-Path $workspaceRoot 'src-tauri\gen\android'
 $jniLibsRoot = Join-Path $androidProjectDir 'app\src\main\jniLibs'

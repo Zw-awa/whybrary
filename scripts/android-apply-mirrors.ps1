@@ -20,7 +20,7 @@ Shows help text.
 
 [CmdletBinding()]
 param(
-    [string]$AndroidProjectDir = (Join-Path (Split-Path -Parent $PSScriptRoot) 'src-tauri\gen\android'),
+    [string]$AndroidProjectDir,
     [switch]$SelfTest,
     [switch]$Help
 )
@@ -32,6 +32,16 @@ if ($Help) {
 
 $ErrorActionPreference = 'Stop'
 
+$scriptRoot = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
+    $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$workspaceRoot = Split-Path -Parent $scriptRoot
+
+if ([string]::IsNullOrWhiteSpace($AndroidProjectDir)) {
+    $AndroidProjectDir = Join-Path $workspaceRoot 'src-tauri\gen\android'
+}
+
 $gradleWrapperPath = Join-Path $AndroidProjectDir 'gradle\wrapper\gradle-wrapper.properties'
 $rootGradlePath = Join-Path $AndroidProjectDir 'build.gradle.kts'
 $buildSrcGradlePath = Join-Path $AndroidProjectDir 'buildSrc\build.gradle.kts'
@@ -39,7 +49,6 @@ $gradlePropertiesPath = Join-Path $AndroidProjectDir 'gradle.properties'
 $appGradlePath = Join-Path $AndroidProjectDir 'app\build.gradle.kts'
 $tauriSettingsGradlePath = Join-Path $AndroidProjectDir 'tauri.settings.gradle'
 $buildTaskKotlinPath = Join-Path $AndroidProjectDir 'buildSrc\src\main\java\io\github\zwawa\whybrary\kotlin\BuildTask.kt'
-$workspaceRoot = Split-Path -Parent $PSScriptRoot
 $cargoLockPath = Join-Path $workspaceRoot 'src-tauri\Cargo.lock'
 $tauriVendorDir = Join-Path $AndroidProjectDir 'tauri-android-vendor'
 

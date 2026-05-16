@@ -29,7 +29,11 @@ if ($Help) {
 }
 
 $ErrorActionPreference = 'Stop'
-$workspaceRoot = Split-Path -Parent $PSScriptRoot
+$scriptRoot = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
+    $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$workspaceRoot = Split-Path -Parent $scriptRoot
 $packageJsonPath = Join-Path $workspaceRoot 'package.json'
 
 if ([string]::IsNullOrWhiteSpace($Version)) {

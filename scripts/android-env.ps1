@@ -27,7 +27,11 @@ if ($Help) {
 
 $ErrorActionPreference = 'Stop'
 
-$workspaceRoot = Split-Path -Parent $PSScriptRoot
+$scriptRoot = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
+    $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$workspaceRoot = Split-Path -Parent $scriptRoot
 $requiredEnvNames = @('JAVA_HOME', 'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'NDK_HOME')
 
 foreach ($name in $requiredEnvNames) {
