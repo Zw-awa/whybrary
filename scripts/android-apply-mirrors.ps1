@@ -53,14 +53,19 @@ $cargoLockPath = Join-Path $workspaceRoot 'src-tauri\Cargo.lock'
 $tauriVendorDir = Join-Path $AndroidProjectDir 'tauri-android-vendor'
 
 $desiredDistributionUrl = 'distributionUrl=https\://mirrors.cloud.tencent.com/gradle/gradle-8.14.3-bin.zip'
-$repositoryBlock = @"
-repositories {
-    maven(url = "https://maven.aliyun.com/repository/google")
-    maven(url = "https://maven.aliyun.com/repository/public")
-    google()
-    mavenCentral()
+$repositoryMode = if ($env:WHYBRARY_ANDROID_REPOSITORY_MODE) {
+    $env:WHYBRARY_ANDROID_REPOSITORY_MODE.Trim().ToLowerInvariant()
 }
-"@
+elseif ($env:GITHUB_ACTIONS -eq 'true') {
+    'official-first'
+}
+else {
+    'mirror-first'
+}
+
+if ($repositoryMode -notin @('mirror-first', 'official-first')) {
+    throw "Unsupported WHYBRARY_ANDROID_REPOSITORY_MODE: $repositoryMode"
+}
 
 $targets = @(
     @{ Path = $gradleWrapperPath; Label = 'Gradle Wrapper' },
@@ -95,9 +100,35 @@ function Write-Utf8NoBom {
     [System.IO.File]::WriteAllText($Path, $Value, $utf8NoBom)
 }
 
+function New-RepositoryBlock {
+    param([string]$Indent = '')
+
+    $repositoryLines = if ($repositoryMode -eq 'official-first') {
+        @(
+            'google()'
+            'mavenCentral()'
+            'maven(url = "https://maven.aliyun.com/repository/google")'
+            'maven(url = "https://maven.aliyun.com/repository/public")'
+        )
+    }
+    else {
+        @(
+            'maven(url = "https://maven.aliyun.com/repository/google")'
+            'maven(url = "https://maven.aliyun.com/repository/public")'
+            'google()'
+            'mavenCentral()'
+        )
+    }
+
+    $lines = @("${Indent}repositories {")
+    $lines += $repositoryLines | ForEach-Object { "${Indent}    $_" }
+    $lines += "${Indent}}"
+    return $lines -join "`r`n"
+}
+
 Write-Output 'Android project directory: src-tauri/gen/android'
 Write-Output "Gradle mirror: $desiredDistributionUrl"
-Write-Output 'Repository strategy: Aliyun mirrors first, official repos kept as fallback.'
+Write-Output "Repository strategy: $repositoryMode"
 
 if ($SelfTest) {
     Write-Output 'SelfTest passed. No files were modified.'
@@ -135,20 +166,28 @@ function Update-RepositoriesFile {
     )
 
     $content = Get-Content $Path -Raw
-    if ($content -match 'maven\.aliyun\.com/repository/google' -and $content -match 'maven\.aliyun\.com/repository/public') {
-        Write-Output "No change: $Label already contains mirror repositories."
+    $normalizedContent = $content -replace "`r`n", "`n"
+    $pattern = '(?ms)^(?<indent>[ \t]*)repositories\s*\{.*?^[ \t]*\}'
+    $matches = [regex]::Matches($normalizedContent, $pattern)
+
+    if ($matches.Count -eq 0) {
+        throw "Could not find repositories block in $Label."
+    }
+
+    $updated = $normalizedContent
+    for ($index = $matches.Count - 1; $index -ge 0; $index--) {
+        $match = $matches[$index]
+        $replacement = (New-RepositoryBlock -Indent $match.Groups['indent'].Value) -replace "`r`n", "`n"
+        $updated = $updated.Remove($match.Index, $match.Length).Insert($match.Index, $replacement)
+    }
+
+    if ($updated -eq $normalizedContent) {
+        Write-Output "No change: $Label already uses repository strategy $repositoryMode."
         return
     }
 
-    $pattern = 'repositories\s*\{\s*google\(\)\s*mavenCentral\(\)\s*\}'
-    $updated = [regex]::Replace($content, $pattern, $repositoryBlock)
-
-    if ($updated -eq $content) {
-        throw "Could not replace repositories block in $Label."
-    }
-
-    Write-Utf8NoBom -Path $Path -Value $updated
-    Write-Output "Updated: $Label repository mirrors."
+    Write-Utf8NoBom -Path $Path -Value (($updated -replace "`n", "`r`n"))
+    Write-Output "Updated: $Label repository strategy to $repositoryMode."
 }
 
 function Update-GradlePropertiesFile {

@@ -174,7 +174,7 @@ Recommended Android flow:
 1. `npm run android:prepare`
    - initializes `src-tauri/gen/android`
    - reads your existing `JAVA_HOME` / `ANDROID_HOME` / `ANDROID_SDK_ROOT` / `NDK_HOME`
-   - rewrites the generated Gradle wrapper and repositories to mirror-first sources
+   - rewrites the generated Gradle wrapper and repositories to environment-aware sources
 2. `npm run android:build:apk`
    - reapplies the same fixed Android environment
    - keeps the locally vendored `tauri-android` module instead of letting the Tauri CLI regenerate it during build
@@ -202,7 +202,9 @@ Required signing environment variables:
 Mirror policy:
 
 - Gradle distribution: Tencent mirror
-- Maven repositories: Aliyun mirror first, official `google()` / `mavenCentral()` kept as fallback
+- Maven repositories:
+  - local default: Aliyun mirrors first, official `google()` / `mavenCentral()` kept as fallback
+  - GitHub Actions default: official `google()` / `mavenCentral()` first, Aliyun mirrors kept as fallback
 - Android SDK auto-download: disabled to avoid long remote manifest waits during local builds
 
 Expected environment:

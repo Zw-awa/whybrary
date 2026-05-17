@@ -137,7 +137,9 @@ npm run android:sign:apk
 Android mirror policy:
 
 - Gradle distribution URL: Tencent mirror
-- Maven repositories: Aliyun mirror first, official `google()` / `mavenCentral()` retained as fallback
+- Maven repositories:
+  - local default: Aliyun mirrors first, official `google()` / `mavenCentral()` retained as fallback
+  - GitHub Actions default: official `google()` / `mavenCentral()` first, Aliyun mirrors retained as fallback
 - Android SDK auto-download: disabled in generated `gradle.properties` so local builds fail fast instead of hanging on remote package manifest checks
 
 This avoids depending on hand-edits inside `src-tauri/gen/android`, which is a generated directory and may be overwritten by future init runs.

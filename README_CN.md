@@ -202,7 +202,9 @@ npm run android:dev
 镜像策略：
 
 - Gradle 分发包：腾讯云镜像
-- Maven 仓库：阿里云镜像优先，保留官方 `google()` / `mavenCentral()` 作为回退
+- Maven 仓库：
+  - 本地默认：阿里云镜像优先，保留官方 `google()` / `mavenCentral()` 作为回退
+  - GitHub Actions 默认：官方 `google()` / `mavenCentral()` 优先，保留阿里云镜像作为回退
 - Android SDK 自动下载：关闭，避免本地构建时长时间卡在远程 package manifests 查询
 
 要求的环境变量：
