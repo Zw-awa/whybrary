@@ -154,6 +154,19 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+$expectedKotlinFiles = @(
+    'Rust.kt',
+    'WryActivity.kt',
+    'TauriActivity.kt'
+)
+
+foreach ($expectedFile in $expectedKotlinFiles) {
+    $generatedPath = Join-Path $kotlinOutDir $expectedFile
+    if (-not (Test-Path $generatedPath)) {
+        throw "Expected generated Android Kotlin file was not created: $generatedPath"
+    }
+}
+
 $profileDir = if ($Release) { 'release' } else { 'debug' }
 $builtLib = Join-Path $workspaceRoot "src-tauri\target\$targetTriple\$profileDir\libwhybrary_lib.so"
 if (-not (Test-Path $builtLib)) {
