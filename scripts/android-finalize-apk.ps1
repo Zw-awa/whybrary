@@ -18,7 +18,7 @@ Shows help text.
 
 [CmdletBinding()]
 param(
-    [string]$ApkDir = (Join-Path (Split-Path -Parent $PSScriptRoot) 'src-tauri\gen\android\app\build\outputs\apk\arm64\release'),
+    [string]$ApkDir,
     [string]$Version,
     [switch]$Help
 )
@@ -35,6 +35,10 @@ if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
 }
 $workspaceRoot = Split-Path -Parent $scriptRoot
 $packageJsonPath = Join-Path $workspaceRoot 'package.json'
+
+if ([string]::IsNullOrWhiteSpace($ApkDir)) {
+    $ApkDir = Join-Path $workspaceRoot 'src-tauri\gen\android\app\build\outputs\apk\arm64\release'
+}
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $package = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
