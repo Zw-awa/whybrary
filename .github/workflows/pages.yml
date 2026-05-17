@@ -34,7 +34,7 @@ jobs:
 
       - name: Build web app
         env:
-          GITHUB_ACTIONS: "true"
+          WHYBRARY_WEB_BASE: /whybrary/
         run: npm run build
 
       - name: Configure Pages

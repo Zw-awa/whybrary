@@ -117,7 +117,13 @@ $crateNameMatch = [regex]::Match($cratePackage, '(?m)^name = "([^"]+)"')
 if (-not $crateNameMatch.Success) {
     throw 'Could not parse crate name from src-tauri/Cargo.toml.'
 }
-$crateLibraryName = $crateNameMatch.Groups[1].Value.Replace('-', '_')
+$crateLibNameMatch = [regex]::Match($cratePackage, '(?ms)^\[lib\].*?^name = "([^"]+)"')
+$crateLibraryName = if ($crateLibNameMatch.Success) {
+    $crateLibNameMatch.Groups[1].Value.Replace('-', '_')
+}
+else {
+    $crateNameMatch.Groups[1].Value.Replace('-', '_')
+}
 
 @(
     'Ipc.kt',

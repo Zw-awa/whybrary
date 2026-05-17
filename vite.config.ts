@@ -1,8 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 
+const explicitBase = process.env.WHYBRARY_WEB_BASE;
+const isTauriBuild = Boolean(process.env.TAURI_ENV_PLATFORM);
+
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS ? '/whybrary/' : '/',
+  base: explicitBase ?? (isTauriBuild ? './' : '/'),
   plugins: [react()],
   clearScreen: false,
   test: {
