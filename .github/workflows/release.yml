@@ -292,6 +292,8 @@ jobs:
           Write-Output "tauri.build.gradle.kts exists: $(Test-Path 'src-tauri/gen/android/app/tauri.build.gradle.kts')"
           Write-Output "root TauriActivity.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/TauriActivity.kt')"
           Write-Output "generated TauriActivity.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/generated/TauriActivity.kt')"
+          Write-Output "root Rust.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/Rust.kt')"
+          Write-Output "generated Rust.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/generated/Rust.kt')"
           Write-Output "tauri.settings.gradle BOM-free: true"
           Write-Output "root build.gradle.kts repositories start line: $rootRepoStart"
           Write-Output "buildSrc build.gradle.kts repositories start line: $buildSrcRepoStart"
@@ -305,6 +307,19 @@ jobs:
         env:
           WHYBRARY_ANDROID_GRADLE_LOG_LEVEL: info
         run: npm run android:build:apk
+
+      - name: Print Android failure summary
+        if: failure()
+        shell: pwsh
+        run: |
+          $logFiles = @(
+            "src-tauri\gen\android\app\build\outputs\logs\manifest-merger-arm64-release-report.txt",
+            "src-tauri\gen\android\build\reports\problems\problems-report.html"
+          ) | Where-Object { Test-Path $_ }
+          foreach ($path in $logFiles) {
+            Write-Output "===== $path ====="
+            Get-Content $path | Select-String -Pattern '(^e: )|(FAILURE:)|(Execution failed for task)|(Unresolved reference)|(Redeclaration)|(Could not read script)|(Could not resolve all artifacts)' -Context 0,2
+          }
 
       - name: Upload Android diagnostics
         if: failure()

@@ -110,13 +110,31 @@ if ([string]::IsNullOrWhiteSpace($appIdentifier)) {
 }
 
 $packagePath = $appIdentifier.Replace('.', '\')
-$kotlinOutDir = Join-Path (Join-Path $androidProjectDir 'app\src\main\java') $packagePath
+$packageJavaDir = Join-Path (Join-Path $androidProjectDir 'app\src\main\java') $packagePath
+$kotlinOutDir = Join-Path $packageJavaDir 'generated'
 $cratePackage = Get-Content $cargoManifest -Raw
 $crateNameMatch = [regex]::Match($cratePackage, '(?m)^name = "([^"]+)"')
 if (-not $crateNameMatch.Success) {
     throw 'Could not parse crate name from src-tauri/Cargo.toml.'
 }
 $crateLibraryName = $crateNameMatch.Groups[1].Value.Replace('-', '_')
+
+@(
+    'Ipc.kt',
+    'Logger.kt',
+    'PermissionHelper.kt',
+    'Rust.kt',
+    'RustWebChromeClient.kt',
+    'RustWebView.kt',
+    'RustWebViewClient.kt',
+    'TauriActivity.kt',
+    'WryActivity.kt'
+) | ForEach-Object {
+    $legacyPath = Join-Path $packageJavaDir $_
+    if (Test-Path $legacyPath) {
+        Remove-Item $legacyPath -Force
+    }
+}
 
 New-Item -ItemType Directory -Force -Path $kotlinOutDir | Out-Null
 Set-Item -Path 'Env:WRY_ANDROID_KOTLIN_FILES_OUT_DIR' -Value $kotlinOutDir
