@@ -15,6 +15,8 @@ permissions:
 jobs:
   verify-version:
     runs-on: ubuntu-latest
+    outputs:
+      is_prerelease: ${{ steps.verify.outputs.is_prerelease }}
 
     steps:
       - name: Checkout
@@ -26,6 +28,7 @@ jobs:
           node-version: 20
 
       - name: Verify tag matches app versions
+        id: verify
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
@@ -35,11 +38,16 @@ jobs:
           PACKAGE_VERSION=$(node -pe "JSON.parse(require('fs').readFileSync('./package.json', 'utf8')).version")
           TAURI_VERSION=$(node -pe "JSON.parse(require('fs').readFileSync('./src-tauri/tauri.conf.json', 'utf8')).version")
           CARGO_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' ./src-tauri/Cargo.toml | head -n1)
+          EXPECTED_PRERELEASE=false
+          if [[ "$TAG_VERSION" == *-* ]]; then
+            EXPECTED_PRERELEASE=true
+          fi
 
           echo "tag=$TAG_VERSION"
           echo "package.json=$PACKAGE_VERSION"
           echo "tauri.conf.json=$TAURI_VERSION"
           echo "Cargo.toml=$CARGO_VERSION"
+          echo "is_prerelease=$EXPECTED_PRERELEASE" >> "$GITHUB_OUTPUT"
 
           if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
             echo "Tag version $TAG_VERSION does not match package.json version $PACKAGE_VERSION"
@@ -118,7 +126,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Whybrary ${{ github.ref_name }}"
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ needs.verify-version.outputs.is_prerelease }}
           releaseCommitish: ${{ github.sha }}
           generateReleaseNotes: true
           includeDebug: false
@@ -208,11 +216,57 @@ jobs:
           $required = @(
             "src-tauri\gen\android\gradle\wrapper\gradle-wrapper.properties",
             "src-tauri\gen\android\app\build.gradle.kts",
-            "src-tauri\gen\android\tauri.settings.gradle"
+            "src-tauri\gen\android\tauri.settings.gradle",
+            "src-tauri\gen\android\tauri-android-vendor\build.gradle.kts"
           )
           foreach ($path in $required) {
             if (-not (Test-Path $path)) {
               throw "Missing generated Android file: $path"
+            }
+          }
+
+      - name: Assert Android version metadata
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $tauriProps = Get-Content src-tauri/gen/android/app/tauri.properties
+          $versionNameLine = $tauriProps | Where-Object { $_ -like 'tauri.android.versionName=*' }
+          $versionCodeLine = $tauriProps | Where-Object { $_ -like 'tauri.android.versionCode=*' }
+
+          if (-not $versionNameLine) {
+            throw "Missing tauri.android.versionName in tauri.properties"
+          }
+          if (-not $versionCodeLine) {
+            throw "Missing tauri.android.versionCode in tauri.properties"
+          }
+
+          $versionName = $versionNameLine.Split('=', 2)[1]
+          $versionCode = [int]$versionCodeLine.Split('=', 2)[1]
+
+          if ($versionName -ne $package.version) {
+            throw "Android versionName $versionName does not match package.json version $($package.version)"
+          }
+
+          if ($package.version -notmatch '^(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))?$') {
+            throw "Unsupported version format for Android versioning: $($package.version)"
+          }
+
+          $expectedVersionCode = ([int]$matches[1] * 1000000) + ([int]$matches[2] * 10000) + ([int]$matches[3] * 100) + $(if ($matches[4]) { [int]$matches[4] } else { 99 })
+          if ($versionCode -ne $expectedVersionCode) {
+            throw "Android versionCode $versionCode does not match expected value $expectedVersionCode for $($package.version)"
+          }
+
+      - name: Assert patched Android files are BOM-free
+        shell: pwsh
+        run: |
+          $paths = @(
+            "src-tauri\gen\android\tauri.settings.gradle",
+            "src-tauri\gen\android\app\tauri.properties"
+          )
+          foreach ($path in $paths) {
+            $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "Patched Android file still contains UTF-8 BOM: $path"
             }
           }
 

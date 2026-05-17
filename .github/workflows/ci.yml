@@ -186,13 +186,57 @@ jobs:
         run: |
           $package = Get-Content package.json -Raw | ConvertFrom-Json
           $tauriProps = Get-Content src-tauri/gen/android/app/tauri.properties
-          $versionLine = $tauriProps | Where-Object { $_ -like 'tauri.android.versionName=*' }
-          if (-not $versionLine) {
+          $versionNameLine = $tauriProps | Where-Object { $_ -like 'tauri.android.versionName=*' }
+          $versionCodeLine = $tauriProps | Where-Object { $_ -like 'tauri.android.versionCode=*' }
+          if (-not $versionNameLine) {
             throw "Missing tauri.android.versionName in tauri.properties"
           }
-          $versionName = $versionLine.Split('=')[1]
+          if (-not $versionCodeLine) {
+            throw "Missing tauri.android.versionCode in tauri.properties"
+          }
+
+          $versionName = $versionNameLine.Split('=', 2)[1]
+          $versionCode = [int]$versionCodeLine.Split('=', 2)[1]
           if ($versionName -ne $package.version) {
             throw "Android versionName $versionName does not match package.json version $($package.version)"
+          }
+
+          if ($package.version -notmatch '^(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))?$') {
+            throw "Unsupported version format for Android versioning: $($package.version)"
+          }
+
+          $expectedVersionCode = ([int]$matches[1] * 1000000) + ([int]$matches[2] * 10000) + ([int]$matches[3] * 100) + $(if ($matches[4]) { [int]$matches[4] } else { 99 })
+          if ($versionCode -ne $expectedVersionCode) {
+            throw "Android versionCode $versionCode does not match expected value $expectedVersionCode for $($package.version)"
+          }
+
+      - name: Verify generated Android project
+        shell: pwsh
+        run: |
+          $required = @(
+            "src-tauri\gen\android\gradle\wrapper\gradle-wrapper.properties",
+            "src-tauri\gen\android\app\build.gradle.kts",
+            "src-tauri\gen\android\tauri.settings.gradle",
+            "src-tauri\gen\android\tauri-android-vendor\build.gradle.kts"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "Missing generated Android file: $path"
+            }
+          }
+
+      - name: Assert patched Android files are BOM-free
+        shell: pwsh
+        run: |
+          $paths = @(
+            "src-tauri\gen\android\tauri.settings.gradle",
+            "src-tauri\gen\android\app\tauri.properties"
+          )
+          foreach ($path in $paths) {
+            $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "Patched Android file still contains UTF-8 BOM: $path"
+            }
           }
 
       - name: Build unsigned Android APK

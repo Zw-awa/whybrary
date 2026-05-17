@@ -5,7 +5,7 @@ This project is released as direct-download installers and packages.
 - Windows: NSIS `-setup.exe`
 - macOS: `.dmg`
 - Linux: `.deb`, `.rpm`, plus optional `.AppImage`
-- Android: signed `.apk` for sideloading, currently built locally
+- Android: signed `.apk` for sideloading
 
 No app-store packaging is required for the current release flow.
 
@@ -108,8 +108,6 @@ Output goal:
 
 ## Android release flow
 
-Android is currently expected to be packaged locally, not by the GitHub release workflow.
-
 Prepare the Android toolchain first:
 
 - Android Studio
@@ -169,6 +167,7 @@ GitHub Actions release flow:
 - exports the same four signing variables to the build process
 - runs `npm run android:build:signed`
 - uploads the signed APK both as an artifact and to the GitHub Release
+- asserts generated Android metadata, versionName/versionCode, and BOM-free patched Gradle files before building
 
 Expected environment variables:
 

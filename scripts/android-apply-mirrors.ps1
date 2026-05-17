@@ -77,6 +77,24 @@ foreach ($target in $targets) {
     }
 }
 
+function Write-Utf8NoBom {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    $parentDir = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($parentDir) -and -not (Test-Path $parentDir)) {
+        New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
+    }
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Value, $utf8NoBom)
+}
+
 Write-Output 'Android project directory: src-tauri/gen/android'
 Write-Output "Gradle mirror: $desiredDistributionUrl"
 Write-Output 'Repository strategy: Aliyun mirrors first, official repos kept as fallback.'
@@ -106,7 +124,7 @@ function Update-WrapperFile {
         throw 'Could not replace distributionUrl.'
     }
 
-    Set-Content -Path $Path -Value $updated -Encoding UTF8
+    Write-Utf8NoBom -Path $Path -Value $updated
     Write-Output 'Updated: Gradle wrapper mirror.'
 }
 
@@ -129,7 +147,7 @@ function Update-RepositoriesFile {
         throw "Could not replace repositories block in $Label."
     }
 
-    Set-Content -Path $Path -Value $updated -Encoding UTF8
+    Write-Utf8NoBom -Path $Path -Value $updated
     Write-Output "Updated: $Label repository mirrors."
 }
 
@@ -140,6 +158,8 @@ function Update-GradlePropertiesFile {
     $desiredLines = @(
         'android.builder.sdkDownload=false'
         'android.javaCompile.suppressSourceTargetDeprecationWarning=true'
+        'kotlin.compiler.execution.strategy=in-process'
+        'org.gradle.vfs.watch=false'
     )
 
     $lines = $content -split "`r?`n"
@@ -165,7 +185,7 @@ function Update-GradlePropertiesFile {
         return
     }
 
-    Set-Content -Path $Path -Value $updated -Encoding UTF8
+    Write-Utf8NoBom -Path $Path -Value $updated
     Write-Output 'Updated: Gradle local build guardrails.'
 }
 
@@ -199,7 +219,7 @@ function Update-AppBuildToolsVersion {
         $updated = $content.Insert($insertIndex, "`r`n$desiredLine")
     }
 
-    Set-Content -Path $Path -Value $updated -Encoding UTF8
+    Write-Utf8NoBom -Path $Path -Value $updated
     Write-Output 'Updated: buildToolsVersion pinned to 36.0.0.'
 }
 
@@ -223,7 +243,7 @@ function Update-ReleaseMinifySetting {
         throw 'Could not locate release minify configuration.'
     }
 
-    Set-Content -Path $Path -Value $updated -Encoding UTF8
+    Write-Utf8NoBom -Path $Path -Value $updated
     Write-Output 'Updated: release minify disabled.'
 }
 
@@ -253,12 +273,7 @@ function Update-TauriPropertiesFile {
     )
     $updated = $lines -join "`r`n"
 
-    $parentDir = Split-Path -Parent $Path
-    if (-not (Test-Path $parentDir)) {
-        New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
-    }
-
-    Set-Content -Path $Path -Value $updated -Encoding UTF8
+    Write-Utf8NoBom -Path $Path -Value $updated
     Write-Output "Updated: tauri.properties versionName/versionCode for $version."
 }
 
@@ -340,7 +355,7 @@ function Sync-TauriAndroidVendor {
 include ':tauri-android'
 project(':tauri-android').projectDir = new File("$escapedPath")
 "@
-    Set-Content -Path $SettingsPath -Value $settingsContent -Encoding UTF8
+    Write-Utf8NoBom -Path $SettingsPath -Value $settingsContent
     Write-Output 'Updated: vendored tauri-android module.'
 }
 
@@ -376,7 +391,14 @@ function Update-BuildTaskKotlin {
         ''
     )
 
-    Set-Content -Path $Path -Value $updated -Encoding UTF8
+    $updated = [regex]::Replace(
+        $updated,
+        '^\s*val release = release \?: throw GradleException\("release cannot be null"\)\r?\n',
+        '',
+        [System.Text.RegularExpressions.RegexOptions]::Multiline
+    )
+
+    Write-Utf8NoBom -Path $Path -Value $updated
     Write-Output 'Updated: BuildTask.kt now uses repository-local Rust Android scripts.'
 }
 
