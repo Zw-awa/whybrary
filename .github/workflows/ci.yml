@@ -120,3 +120,81 @@ jobs:
 
           cat "$REPORT_PATH"
           grep -q '"success": true' "$REPORT_PATH"
+
+  android-checks:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Prefetch Rust dependencies
+        shell: pwsh
+        run: cargo fetch --manifest-path src-tauri/Cargo.toml
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: Install Android packages
+        shell: pwsh
+        run: |
+          sdkmanager `
+            --sdk_root="$env:ANDROID_SDK_ROOT" `
+            "platform-tools" `
+            "platforms;android-36" `
+            "build-tools;36.0.0" `
+            "ndk;30.0.14904198"
+
+      - name: Normalize Android environment
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ANDROID_SDK_ROOT)) {
+            throw "ANDROID_SDK_ROOT is not set after setup-android."
+          }
+          "ANDROID_HOME=$env:ANDROID_SDK_ROOT" >> $env:GITHUB_ENV
+          "ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT" >> $env:GITHUB_ENV
+          "NDK_HOME=$env:ANDROID_SDK_ROOT\ndk\30.0.14904198" >> $env:GITHUB_ENV
+
+      - name: Prepare Android project
+        shell: pwsh
+        run: npm run android:prepare
+
+      - name: Assert Android version metadata
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $tauriProps = Get-Content src-tauri/gen/android/app/tauri.properties
+          $versionLine = $tauriProps | Where-Object { $_ -like 'tauri.android.versionName=*' }
+          if (-not $versionLine) {
+            throw "Missing tauri.android.versionName in tauri.properties"
+          }
+          $versionName = $versionLine.Split('=')[1]
+          if ($versionName -ne $package.version) {
+            throw "Android versionName $versionName does not match package.json version $($package.version)"
+          }
+
+      - name: Build unsigned Android APK
+        shell: pwsh
+        run: npm run android:build:apk

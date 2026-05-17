@@ -153,6 +153,10 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      - name: Prefetch Rust dependencies
+        shell: pwsh
+        run: cargo fetch --manifest-path src-tauri/Cargo.toml
+
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
