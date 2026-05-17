@@ -259,6 +259,8 @@ jobs:
           Write-Output $versionNameLine
           Write-Output $versionCodeLine
           Write-Output "tauri.build.gradle.kts exists: $(Test-Path 'src-tauri/gen/android/app/tauri.build.gradle.kts')"
+          Write-Output "root TauriActivity.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/TauriActivity.kt')"
+          Write-Output "generated TauriActivity.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/generated/TauriActivity.kt')"
           Write-Output "tauri.settings.gradle BOM-free: true"
           Write-Output "root build.gradle.kts repositories start line: $rootRepoStart"
           Write-Output "buildSrc build.gradle.kts repositories start line: $buildSrcRepoStart"

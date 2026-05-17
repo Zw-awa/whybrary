@@ -38,6 +38,7 @@ if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
 }
 $workspaceRoot = Split-Path -Parent $scriptRoot
 $cargoManifest = Join-Path $workspaceRoot 'src-tauri\Cargo.toml'
+$tauriConfigPath = Join-Path $workspaceRoot 'src-tauri\tauri.conf.json'
 $androidProjectDir = Join-Path $workspaceRoot 'src-tauri\gen\android'
 $jniLibsRoot = Join-Path $androidProjectDir 'app\src\main\jniLibs'
 
@@ -101,6 +102,28 @@ Set-Item -Path "Env:CC_$targetTriple" -Value $clangPath
 Set-Item -Path "Env:AR_$targetTriple" -Value $llvmArPath
 Set-Item -Path ("Env:CC_" + $targetTriple.Replace('-', '_')) -Value $clangPath
 Set-Item -Path ("Env:AR_" + $targetTriple.Replace('-', '_')) -Value $llvmArPath
+
+$tauriConfig = Get-Content $tauriConfigPath -Raw | ConvertFrom-Json
+$appIdentifier = $tauriConfig.identifier
+if ([string]::IsNullOrWhiteSpace($appIdentifier)) {
+    throw 'Missing identifier in src-tauri/tauri.conf.json.'
+}
+
+$packagePath = $appIdentifier.Replace('.', '\')
+$kotlinOutDir = Join-Path (Join-Path $androidProjectDir 'app\src\main\java') $packagePath
+$cratePackage = Get-Content $cargoManifest -Raw
+$crateNameMatch = [regex]::Match($cratePackage, '(?m)^name = "([^"]+)"')
+if (-not $crateNameMatch.Success) {
+    throw 'Could not parse crate name from src-tauri/Cargo.toml.'
+}
+$crateLibraryName = $crateNameMatch.Groups[1].Value.Replace('-', '_')
+
+New-Item -ItemType Directory -Force -Path $kotlinOutDir | Out-Null
+Set-Item -Path 'Env:WRY_ANDROID_KOTLIN_FILES_OUT_DIR' -Value $kotlinOutDir
+Set-Item -Path 'Env:WRY_ANDROID_PACKAGE' -Value $appIdentifier
+Set-Item -Path 'Env:WRY_ANDROID_LIBRARY' -Value $crateLibraryName
+Set-Item -Path 'Env:WRY_TAURIACTIVITY_CLASS_EXTENSION' -Value ': WryActivity()'
+Set-Item -Path 'Env:WRY_TAURIACTIVITY_CLASS_INIT' -Value ''
 
 $cargoArgs = @('build', '--manifest-path', $cargoManifest, '--lib', '--target', $targetTriple)
 if ($Release) {
