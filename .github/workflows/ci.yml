@@ -255,6 +255,7 @@ jobs:
 
           $rootRepoStart = ($rootGradle | Select-String -Pattern 'repositories \{' | Select-Object -First 1).LineNumber
           $buildSrcRepoStart = ($buildSrcGradle | Select-String -Pattern 'repositories \{' | Select-Object -First 1).LineNumber
+          $rustPluginDependsOnPatched = [bool]($rustPlugin | Select-String -SimpleMatch 'tasks["compile${targetArchCapitalized}${profileCapitalized}Kotlin"].dependsOn(')
 
           Write-Output "package.json version: $($package.version)"
           Write-Output $versionNameLine
@@ -264,7 +265,7 @@ jobs:
           Write-Output "generated TauriActivity.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/generated/TauriActivity.kt')"
           Write-Output "root Rust.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/Rust.kt')"
           Write-Output "generated Rust.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/generated/Rust.kt')"
-          Write-Output "RustPlugin Kotlin dependsOn patch present: $($rustPlugin -match 'compile\$\{targetArchCapitalized\}\$\{profileCapitalized\}Kotlin\"\\)\\.dependsOn')"
+          Write-Output "RustPlugin Kotlin dependsOn patch present: $rustPluginDependsOnPatched"
           Write-Output "tauri.settings.gradle BOM-free: true"
           Write-Output "root build.gradle.kts repositories start line: $rootRepoStart"
           Write-Output "buildSrc build.gradle.kts repositories start line: $buildSrcRepoStart"
