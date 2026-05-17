@@ -216,6 +216,7 @@ jobs:
           $required = @(
             "src-tauri\gen\android\gradle\wrapper\gradle-wrapper.properties",
             "src-tauri\gen\android\app\build.gradle.kts",
+            "src-tauri\gen\android\app\tauri.build.gradle.kts",
             "src-tauri\gen\android\tauri.settings.gradle",
             "src-tauri\gen\android\tauri-android-vendor\build.gradle.kts"
           )
