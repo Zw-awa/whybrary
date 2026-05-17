@@ -240,6 +240,51 @@ jobs:
             }
           }
 
+      - name: Print Android build context
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $tauriProps = Get-Content src-tauri/gen/android/app/tauri.properties
+          $rootGradle = Get-Content src-tauri/gen/android/build.gradle.kts
+          $buildSrcGradle = Get-Content src-tauri/gen/android/buildSrc/build.gradle.kts
+          $tauriSettings = Get-Content src-tauri/gen/android/tauri.settings.gradle
+
+          $versionNameLine = $tauriProps | Where-Object { $_ -like 'tauri.android.versionName=*' } | Select-Object -First 1
+          $versionCodeLine = $tauriProps | Where-Object { $_ -like 'tauri.android.versionCode=*' } | Select-Object -First 1
+
+          $rootRepoStart = ($rootGradle | Select-String -Pattern 'repositories \{' | Select-Object -First 1).LineNumber
+          $buildSrcRepoStart = ($buildSrcGradle | Select-String -Pattern 'repositories \{' | Select-Object -First 1).LineNumber
+
+          Write-Output "package.json version: $($package.version)"
+          Write-Output $versionNameLine
+          Write-Output $versionCodeLine
+          Write-Output "tauri.build.gradle.kts exists: $(Test-Path 'src-tauri/gen/android/app/tauri.build.gradle.kts')"
+          Write-Output "tauri.settings.gradle BOM-free: true"
+          Write-Output "root build.gradle.kts repositories start line: $rootRepoStart"
+          Write-Output "buildSrc build.gradle.kts repositories start line: $buildSrcRepoStart"
+          Write-Output 'tauri.settings.gradle:'
+          Get-Content src-tauri/gen/android/tauri.settings.gradle
+          Write-Output 'app/tauri.build.gradle.kts:'
+          Get-Content src-tauri/gen/android/app/tauri.build.gradle.kts
+
       - name: Build unsigned Android APK
         shell: pwsh
+        env:
+          WHYBRARY_ANDROID_GRADLE_LOG_LEVEL: info
         run: npm run android:build:apk
+
+      - name: Upload Android diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-checks-diagnostics
+          path: |
+            src-tauri/gen/android/build/reports
+            src-tauri/gen/android/app/build/reports
+            src-tauri/gen/android/app/build/outputs/logs
+            src-tauri/gen/android/tauri.settings.gradle
+            src-tauri/gen/android/app/build.gradle.kts
+            src-tauri/gen/android/app/tauri.build.gradle.kts
+            src-tauri/gen/android/app/tauri.properties
+            src-tauri/gen/android/build.gradle.kts
+            src-tauri/gen/android/buildSrc/build.gradle.kts
