@@ -306,19 +306,46 @@ jobs:
         shell: pwsh
         env:
           WHYBRARY_ANDROID_GRADLE_LOG_LEVEL: info
-        run: npm run android:build:apk
-
-      - name: Print Android failure summary
-        if: failure()
-        shell: pwsh
         run: |
-          $logFiles = @(
-            "src-tauri\gen\android\app\build\outputs\logs\manifest-merger-arm64-release-report.txt",
-            "src-tauri\gen\android\build\reports\problems\problems-report.html"
-          ) | Where-Object { Test-Path $_ }
-          foreach ($path in $logFiles) {
-            Write-Output "===== $path ====="
-            Get-Content $path | Select-String -Pattern '(^e: )|(FAILURE:)|(Execution failed for task)|(Unresolved reference)|(Redeclaration)|(Could not read script)|(Could not resolve all artifacts)' -Context 0,2
+          $logDir = "src-tauri\gen\android\build\reports"
+          $logPath = Join-Path $logDir "whybrary-android-build.log"
+          New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+          if (Test-Path $logPath) {
+            Remove-Item $logPath -Force
+          }
+
+          $lineCount = 0
+          $interestingPattern = '(^e: )|(FAILURE:)|(Execution failed for task)|(Unresolved reference)|(Redeclaration)|(Could not read script)|(Could not resolve all artifacts)|(Compilation error)|(BUILD FAILED)|(BUILD SUCCESSFUL)|(Generated stable APK name:)|(> Task :app:rustBuildArm64Release)|(> Task :app:compileArm64ReleaseKotlin)|(> Task :app:assembleArm64Release)'
+
+          npm run android:build:apk 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            Add-Content -Path $logPath -Value $line
+            $lineCount++
+
+            if ($line -match $interestingPattern) {
+              Write-Output $line
+            }
+            elseif (($lineCount % 250) -eq 0) {
+              Write-Output "android build progress: $lineCount lines captured"
+            }
+          }
+
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            Write-Output '===== Android failure summary ====='
+            $matches = Get-Content $logPath | Select-String -Pattern '(^e: )|(FAILURE:)|(Execution failed for task)|(Unresolved reference)|(Redeclaration)|(Could not read script)|(Could not resolve all artifacts)|(Compilation error)|(BUILD FAILED)' -Context 0,2
+            if ($matches) {
+              foreach ($match in $matches | Select-Object -First 120) {
+                foreach ($summaryLine in ($match.Context.PreContext + $match.Line + $match.Context.PostContext)) {
+                  Write-Output $summaryLine
+                }
+                Write-Output ''
+              }
+            }
+            else {
+              Get-Content $logPath | Select-Object -Last 120
+            }
+            exit $exitCode
           }
 
       - name: Upload Android diagnostics
@@ -327,6 +354,7 @@ jobs:
         with:
           name: android-release-diagnostics
           path: |
+            src-tauri/gen/android/build/reports/whybrary-android-build.log
             src-tauri/gen/android/build/reports
             src-tauri/gen/android/app/build/reports
             src-tauri/gen/android/app/build/outputs/logs
