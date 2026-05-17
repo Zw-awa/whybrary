@@ -278,6 +278,7 @@ jobs:
           $tauriProps = Get-Content src-tauri/gen/android/app/tauri.properties
           $rootGradle = Get-Content src-tauri/gen/android/build.gradle.kts
           $buildSrcGradle = Get-Content src-tauri/gen/android/buildSrc/build.gradle.kts
+          $rustPlugin = Get-Content src-tauri/gen/android/buildSrc/src/main/java/io/github/zwawa/whybrary/kotlin/RustPlugin.kt
           $tauriSettings = Get-Content src-tauri/gen/android/tauri.settings.gradle
 
           $versionNameLine = $tauriProps | Where-Object { $_ -like 'tauri.android.versionName=*' } | Select-Object -First 1
@@ -294,6 +295,7 @@ jobs:
           Write-Output "generated TauriActivity.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/generated/TauriActivity.kt')"
           Write-Output "root Rust.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/Rust.kt')"
           Write-Output "generated Rust.kt exists: $(Test-Path 'src-tauri/gen/android/app/src/main/java/io/github/zwawa/whybrary/generated/Rust.kt')"
+          Write-Output "RustPlugin Kotlin dependsOn patch present: $($rustPlugin -match 'compile\$\{targetArchCapitalized\}\$\{profileCapitalized\}Kotlin\"\\)\\.dependsOn')"
           Write-Output "tauri.settings.gradle BOM-free: true"
           Write-Output "root build.gradle.kts repositories start line: $rootRepoStart"
           Write-Output "buildSrc build.gradle.kts repositories start line: $buildSrcRepoStart"

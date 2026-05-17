@@ -50,6 +50,7 @@ $appGradlePath = Join-Path $AndroidProjectDir 'app\build.gradle.kts'
 $appTauriBuildGradlePath = Join-Path $AndroidProjectDir 'app\tauri.build.gradle.kts'
 $tauriSettingsGradlePath = Join-Path $AndroidProjectDir 'tauri.settings.gradle'
 $buildTaskKotlinPath = Join-Path $AndroidProjectDir 'buildSrc\src\main\java\io\github\zwawa\whybrary\kotlin\BuildTask.kt'
+$rustPluginKotlinPath = Join-Path $AndroidProjectDir 'buildSrc\src\main\java\io\github\zwawa\whybrary\kotlin\RustPlugin.kt'
 $cargoLockPath = Join-Path $workspaceRoot 'src-tauri\Cargo.lock'
 $tauriVendorDir = Join-Path $AndroidProjectDir 'tauri-android-vendor'
 
@@ -74,7 +75,8 @@ $targets = @(
     @{ Path = $buildSrcGradlePath; Label = 'buildSrc build.gradle.kts' },
     @{ Path = $gradlePropertiesPath; Label = 'gradle.properties' },
     @{ Path = $appGradlePath; Label = 'app/build.gradle.kts' },
-    @{ Path = $buildTaskKotlinPath; Label = 'buildSrc BuildTask.kt' }
+    @{ Path = $buildTaskKotlinPath; Label = 'buildSrc BuildTask.kt' },
+    @{ Path = $rustPluginKotlinPath; Label = 'buildSrc RustPlugin.kt' }
 )
 
 foreach ($target in $targets) {
@@ -470,6 +472,44 @@ function Update-BuildTaskKotlin {
     Write-Output 'Updated: BuildTask.kt now uses repository-local Rust Android scripts.'
 }
 
+function Update-RustPluginKotlin {
+    param([string]$Path)
+
+    $content = Get-Content $Path -Raw
+    if ($content -match 'compile\$\{targetArchCapitalized\}\$\{profileCapitalized\}Kotlin"\)\.dependsOn') {
+        Write-Output 'No change: RustPlugin.kt already wires Kotlin/Java compilation to Rust build tasks.'
+        return
+    }
+
+    $anchor = @'
+                    buildTask.dependsOn(targetBuildTask)
+                    tasks["merge$targetArchCapitalized${profileCapitalized}JniLibFolders"].dependsOn(
+                        targetBuildTask
+                    )
+'@
+
+    $replacement = @'
+                    buildTask.dependsOn(targetBuildTask)
+                    tasks["merge$targetArchCapitalized${profileCapitalized}JniLibFolders"].dependsOn(
+                        targetBuildTask
+                    )
+                    tasks["compile${targetArchCapitalized}${profileCapitalized}Kotlin"].dependsOn(
+                        targetBuildTask
+                    )
+                    tasks["compile${targetArchCapitalized}${profileCapitalized}JavaWithJavac"].dependsOn(
+                        targetBuildTask
+                    )
+'@
+
+    $updated = $content.Replace($anchor, $replacement)
+    if ($updated -eq $content) {
+        throw 'Could not patch RustPlugin.kt task dependencies.'
+    }
+
+    Write-Utf8NoBom -Path $Path -Value $updated
+    Write-Output 'Updated: RustPlugin.kt now forces Kotlin/Java compilation to wait for Rust build tasks.'
+}
+
 Update-WrapperFile -Path $gradleWrapperPath
 Update-RepositoriesFile -Path $rootGradlePath -Label 'root Gradle config'
 Update-RepositoriesFile -Path $buildSrcGradlePath -Label 'buildSrc Gradle config'
@@ -482,5 +522,6 @@ $tauriSourceDir = Resolve-TauriAndroidSourceDir -CargoLockPath $cargoLockPath
 Sync-TauriAndroidVendor -SourceDir $tauriSourceDir -VendorDir $tauriVendorDir -SettingsPath $tauriSettingsGradlePath
 Update-AppBuildToolsVersion -Path (Join-Path $tauriVendorDir 'build.gradle.kts')
 Update-BuildTaskKotlin -Path $buildTaskKotlinPath
+Update-RustPluginKotlin -Path $rustPluginKotlinPath
 
 Write-Output 'Android mirror and patch application complete.'
