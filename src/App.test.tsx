@@ -126,7 +126,7 @@ describe('App integration', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Loaded Space' })).toBeTruthy();
-    expect(document.documentElement.dataset.theme).toBe('dark');
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
     expect(screen.getByRole('button', { name: 'Use Light Theme' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Whybrary web welcome' })).toBeTruthy();
   });

@@ -230,10 +230,6 @@ function Update-ReleaseMinifySetting {
 function Update-TauriPropertiesFile {
     param([string]$Path)
 
-    if (-not (Test-Path $Path)) {
-        throw 'Missing tauri.properties.'
-    }
-
     $packageJsonPath = Join-Path $workspaceRoot 'package.json'
     $package = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
     $version = $package.version
@@ -256,6 +252,12 @@ function Update-TauriPropertiesFile {
         ''
     )
     $updated = $lines -join "`r`n"
+
+    $parentDir = Split-Path -Parent $Path
+    if (-not (Test-Path $parentDir)) {
+        New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
+    }
+
     Set-Content -Path $Path -Value $updated -Encoding UTF8
     Write-Output "Updated: tauri.properties versionName/versionCode for $version."
 }
