@@ -151,7 +151,7 @@ Set-Item -Path 'Env:WRY_TAURIACTIVITY_CLASS_INIT' -Value ''
 
 $cargoArgs = @('build', '--manifest-path', $cargoManifest, '--lib', '--target', $targetTriple)
 if ($Release) {
-    $cargoArgs += '--release'
+    $cargoArgs += @('--release', '--features', 'tauri/custom-protocol')
 }
 
 Write-Output "Building Rust Android shared library for target: $Target"

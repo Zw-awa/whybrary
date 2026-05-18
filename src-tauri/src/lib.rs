@@ -4,6 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
+#[cfg(desktop)]
+use tauri::{LogicalSize, Size};
+
 const LATEST_SCHEMA_VERSION: i32 = 1;
 const SMOKE_MODE_ENV: &str = "WHYBRARY_TAURI_SMOKE";
 const APP_DATA_DIR_OVERRIDE_ENV: &str = "WHYBRARY_APP_DATA_DIR";
@@ -806,6 +809,7 @@ mod tests {
     }
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut context = tauri::generate_context!();
     if std::env::var_os(SMOKE_MODE_ENV).is_some() {
@@ -815,6 +819,25 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             if std::env::var_os(SMOKE_MODE_ENV).is_none() {
+                #[cfg(desktop)]
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Some(monitor) = window.current_monitor()? {
+                        let work_area = monitor.work_area();
+                        let scale_factor = monitor.scale_factor();
+                        let max_width = ((work_area.size.width as f64) / scale_factor).floor();
+                        let max_height = ((work_area.size.height as f64) / scale_factor).floor();
+                        let target_width = max_width.min(1360.0).max(900.0);
+                        let target_height = max_height.min(860.0).max(640.0);
+
+                        window.set_min_size(Some(LogicalSize::new(900.0, 640.0)))?;
+                        window.set_size(Size::Logical(LogicalSize::new(
+                            target_width,
+                            target_height,
+                        )))?;
+                        let _ = window.center();
+                    }
+                }
+
                 return Ok(());
             }
 

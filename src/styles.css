@@ -100,7 +100,7 @@ button {
 }
 
 .app-shell--desktop {
-  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  grid-template-columns: clamp(248px, 20vw, 304px) minmax(0, 1fr);
 }
 
 .app-shell--tablet,
@@ -189,6 +189,12 @@ button {
 .graph-mobile-bar,
 .welcome-panel__actions {
   gap: 10px;
+}
+
+.sidebar__controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
 }
 
 .status-pill,
@@ -406,7 +412,7 @@ button {
   min-height: 0;
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(320px, 0.88fr) minmax(0, 1.22fr);
+  grid-template-columns: minmax(300px, 0.96fr) minmax(0, 1.04fr);
 }
 
 .workspace__grid--single {
@@ -1038,7 +1044,7 @@ button {
   }
 }
 
-@media (max-width: 1199px) {
+@media (max-width: 899px) {
   .app-shell--tablet .workspace__grid,
   .app-shell--phone .workspace__grid {
     grid-template-columns: 1fr;
@@ -1085,6 +1091,10 @@ button {
   .todo-composer {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .sidebar__controls {
+    grid-template-columns: 1fr;
   }
 
   .todo-item {

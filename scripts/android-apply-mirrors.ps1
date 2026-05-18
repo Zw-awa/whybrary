@@ -48,11 +48,14 @@ $buildSrcGradlePath = Join-Path $AndroidProjectDir 'buildSrc\build.gradle.kts'
 $gradlePropertiesPath = Join-Path $AndroidProjectDir 'gradle.properties'
 $appGradlePath = Join-Path $AndroidProjectDir 'app\build.gradle.kts'
 $appTauriBuildGradlePath = Join-Path $AndroidProjectDir 'app\tauri.build.gradle.kts'
+$androidManifestPath = Join-Path $AndroidProjectDir 'app\src\main\AndroidManifest.xml'
+$androidResDir = Join-Path $AndroidProjectDir 'app\src\main\res'
 $tauriSettingsGradlePath = Join-Path $AndroidProjectDir 'tauri.settings.gradle'
 $buildTaskKotlinPath = Join-Path $AndroidProjectDir 'buildSrc\src\main\java\io\github\zwawa\whybrary\kotlin\BuildTask.kt'
 $rustPluginKotlinPath = Join-Path $AndroidProjectDir 'buildSrc\src\main\java\io\github\zwawa\whybrary\kotlin\RustPlugin.kt'
 $cargoLockPath = Join-Path $workspaceRoot 'src-tauri\Cargo.lock'
 $tauriVendorDir = Join-Path $AndroidProjectDir 'tauri-android-vendor'
+$androidIconSourceDir = Join-Path $workspaceRoot 'src-tauri\icons\android'
 
 $desiredDistributionUrl = 'distributionUrl=https\://mirrors.cloud.tencent.com/gradle/gradle-8.14.3-bin.zip'
 $repositoryMode = if ($env:WHYBRARY_ANDROID_REPOSITORY_MODE) {
@@ -75,6 +78,7 @@ $targets = @(
     @{ Path = $buildSrcGradlePath; Label = 'buildSrc build.gradle.kts' },
     @{ Path = $gradlePropertiesPath; Label = 'gradle.properties' },
     @{ Path = $appGradlePath; Label = 'app/build.gradle.kts' },
+    @{ Path = $androidManifestPath; Label = 'app/src/main/AndroidManifest.xml' },
     @{ Path = $buildTaskKotlinPath; Label = 'buildSrc BuildTask.kt' },
     @{ Path = $rustPluginKotlinPath; Label = 'buildSrc RustPlugin.kt' }
 )
@@ -510,6 +514,60 @@ function Update-RustPluginKotlin {
     Write-Output 'Updated: RustPlugin.kt now forces Kotlin/Java compilation to wait for Rust build tasks.'
 }
 
+function Sync-AndroidIcons {
+    param(
+        [string]$SourceDir,
+        [string]$TargetResDir
+    )
+
+    if (-not (Test-Path $SourceDir)) {
+        throw "Missing Android icon source directory: $SourceDir"
+    }
+
+    New-Item -ItemType Directory -Force -Path $TargetResDir | Out-Null
+
+    Get-ChildItem -Path $SourceDir -Directory | ForEach-Object {
+        $targetDir = Join-Path $TargetResDir $_.Name
+        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+        Copy-Item -Path (Join-Path $_.FullName '*') -Destination $targetDir -Recurse -Force
+    }
+
+    @(
+        (Join-Path $TargetResDir 'drawable\ic_launcher_background.xml'),
+        (Join-Path $TargetResDir 'drawable-v24\ic_launcher_foreground.xml')
+    ) | ForEach-Object {
+        if (Test-Path $_) {
+            Remove-Item $_ -Force
+        }
+    }
+
+    Write-Output 'Updated: Android launcher icon resources synced from src-tauri/icons/android.'
+}
+
+function Update-AndroidManifestIcons {
+    param([string]$Path)
+
+    $content = Get-Content $Path -Raw
+    $updated = $content
+
+    if ($updated -notmatch 'android:roundIcon=') {
+        $updated = [regex]::Replace(
+            $updated,
+            'android:icon="@mipmap/ic_launcher"',
+            "android:icon=""@mipmap/ic_launcher""`r`n        android:roundIcon=""@mipmap/ic_launcher_round""",
+            1
+        )
+    }
+
+    if ($updated -eq $content) {
+        Write-Output 'No change: AndroidManifest launcher icon attributes already configured.'
+        return
+    }
+
+    Write-Utf8NoBom -Path $Path -Value $updated
+    Write-Output 'Updated: AndroidManifest launcher icon attributes.'
+}
+
 Update-WrapperFile -Path $gradleWrapperPath
 Update-RepositoriesFile -Path $rootGradlePath -Label 'root Gradle config'
 Update-RepositoriesFile -Path $buildSrcGradlePath -Label 'buildSrc Gradle config'
@@ -523,5 +581,7 @@ Sync-TauriAndroidVendor -SourceDir $tauriSourceDir -VendorDir $tauriVendorDir -S
 Update-AppBuildToolsVersion -Path (Join-Path $tauriVendorDir 'build.gradle.kts')
 Update-BuildTaskKotlin -Path $buildTaskKotlinPath
 Update-RustPluginKotlin -Path $rustPluginKotlinPath
+Sync-AndroidIcons -SourceDir $androidIconSourceDir -TargetResDir $androidResDir
+Update-AndroidManifestIcons -Path $androidManifestPath
 
 Write-Output 'Android mirror and patch application complete.'

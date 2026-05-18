@@ -55,11 +55,11 @@ function isWebPreview(): boolean {
 }
 
 function getLayoutMode(width: number): DeviceLayoutMode {
-  if (width <= 768) {
+  if (width <= 760) {
     return 'phone';
   }
 
-  if (width < 1200) {
+  if (width < 900) {
     return 'tablet';
   }
 

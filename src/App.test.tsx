@@ -142,6 +142,15 @@ describe('App integration', () => {
     expect(screen.getByRole('button', { name: 'Close spaces' })).toBeTruthy();
   });
 
+  it('keeps the desktop sidebar layout on narrower desktop windows', async () => {
+    setWindowWidth(900);
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+    expect(screen.queryByRole('navigation', { name: 'Primary mobile navigation' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'New Space' })).toBeTruthy();
+  });
+
   it('falls back to the default state when snapshot loading fails', async () => {
     loadSnapshotMock.mockRejectedValue(new Error('load failed'));
 
