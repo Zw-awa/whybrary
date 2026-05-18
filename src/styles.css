@@ -60,6 +60,7 @@ html,
 body,
 #root {
   width: 100%;
+  height: 100%;
   min-height: 100%;
   margin: 0;
 }
@@ -101,6 +102,47 @@ button {
 
 .app-shell--desktop {
   grid-template-columns: clamp(248px, 20vw, 304px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+}
+
+.app-shell--desktop .sidebar,
+.app-shell--desktop .workspace {
+  height: 100%;
+  min-height: 0;
+}
+
+.app-shell--desktop .workspace {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell--desktop .workspace__grid {
+  flex: 1 1 auto;
+  height: auto;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.app-shell--desktop .panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.app-shell--desktop .panel__header,
+.app-shell--desktop .todo-composer {
+  flex: 0 0 auto;
+}
+
+.app-shell--desktop .graph-shell,
+.app-shell--desktop .todo-surface {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
 }
 
 .app-shell--tablet,
@@ -117,7 +159,7 @@ button {
   flex-direction: column;
   gap: 20px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  overflow: auto;
+  overflow: hidden;
 }
 
 .sidebar--drawer {
@@ -125,6 +167,7 @@ button {
   height: min(82vh, 760px);
   border-right: 0;
   border-radius: 28px 28px 0 0;
+  overflow: auto;
 }
 
 .sidebar__brand,
@@ -281,6 +324,12 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.12);
   display: grid;
   gap: 14px;
+  min-height: 0;
+}
+
+.sidebar__section--spaces {
+  flex: 1 1 auto;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .sidebar__section--editor {
@@ -305,6 +354,13 @@ button {
 .graph-selection-bar {
   display: grid;
   gap: 10px;
+}
+
+.space-list {
+  min-height: 0;
+  overflow: auto;
+  align-content: start;
+  scrollbar-gutter: stable;
 }
 
 .space-card {
@@ -366,7 +422,6 @@ button {
 }
 
 .workspace {
-  min-height: 100vh;
   padding: 24px;
   display: grid;
   grid-template-rows: auto auto 1fr;
@@ -413,6 +468,7 @@ button {
   display: grid;
   gap: 18px;
   grid-template-columns: minmax(300px, 0.96fr) minmax(0, 1.04fr);
+  overflow: hidden;
 }
 
 .workspace__grid--single {
@@ -455,7 +511,7 @@ button {
 }
 
 .graph-shell {
-  min-height: 420px;
+  min-height: 0;
 }
 
 .graph-shell--custom {

@@ -75,7 +75,7 @@ export function SpaceSidebar({
         </button>
       </div>
 
-      <section className="sidebar__section">
+      <section className="sidebar__section sidebar__section--spaces">
         <div className="section-heading">
           <strong>Spaces</strong>
           <span>{spaces.length}</span>
