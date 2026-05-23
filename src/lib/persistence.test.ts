@@ -6,6 +6,7 @@ const { invokeMock } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
 }));
 const defaultSnapshot: AppSnapshot = {
+  locale: 'en',
   theme: 'dark',
   activeSpaceId: 'default-space',
   lastOpenedAt: '2026-01-01T00:00:00.000Z',
@@ -34,6 +35,7 @@ vi.mock('./defaults', () => ({
 import { clearPreviewSnapshot, loadSnapshot, saveSnapshot } from './persistence';
 
 const previewSnapshot: AppSnapshot = {
+  locale: 'zh',
   theme: 'light',
   activeSpaceId: 'preview-space',
   lastOpenedAt: '2026-02-02T00:00:00.000Z',

@@ -38,6 +38,7 @@ import App from './App';
 
 function makeSnapshot(): AppSnapshot {
   return {
+    locale: 'en',
     theme: 'dark',
     activeSpaceId: 'space-1',
     lastOpenedAt: '2026-01-01T00:00:00.000Z',
@@ -129,6 +130,19 @@ describe('App integration', () => {
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
     expect(screen.getByRole('button', { name: 'Use Light Theme' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Whybrary web welcome' })).toBeTruthy();
+  });
+
+  it('opens settings and switches the interface language to chinese', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '简体中文' }));
+
+    expect(screen.getByRole('button', { name: '设置' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '切换为浅色主题' })).toBeTruthy();
   });
 
   it('switches to mobile navigation and opens the spaces sheet on narrow screens', async () => {

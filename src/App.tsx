@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useState } from 'react';
 import { AppDialog } from './components/AppDialog';
 import { BrainCanvas } from './components/BrainCanvas';
+import { SettingsDialog } from './components/SettingsDialog';
 import { SpaceSidebar } from './components/SpaceSidebar';
 import { WhyTodoPanel } from './components/WhyTodoPanel';
 import {
@@ -11,12 +12,14 @@ import {
   nowIso,
 } from './lib/defaults';
 import { clearPreviewSnapshot, loadSnapshot, saveSnapshot } from './lib/persistence';
+import { getCopy } from './lib/i18n';
 import {
   buildSnapshotFilename,
   parseSnapshot,
   serializeSnapshot,
 } from './lib/snapshotTransfer';
 import type {
+  AppLocale,
   AppSnapshot,
   BrainNode,
   DeviceLayoutMode,
@@ -35,18 +38,23 @@ type AppDialogState =
       variant?: 'confirm' | 'notice';
     };
 
-function saveStatusLabel(status: 'booting' | 'saving' | 'saved' | 'error'): string {
+function saveStatusLabel(
+  status: 'booting' | 'saving' | 'saved' | 'error',
+  locale: AppLocale,
+): string {
+  const copy = getCopy(locale);
+
   switch (status) {
     case 'booting':
-      return 'Booting';
+      return copy.status.booting;
     case 'saving':
-      return 'Saving locally';
+      return copy.status.saving;
     case 'saved':
-      return 'Saved locally';
+      return copy.status.saved;
     case 'error':
-      return 'Save fallback active';
+      return copy.status.error;
     default:
-      return 'Saved locally';
+      return copy.status.saved;
   }
 }
 
@@ -79,9 +87,11 @@ export default function App() {
   );
   const [mobileView, setMobileView] = useState<MobilePrimaryView>('map');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [dialogState, setDialogState] = useState<AppDialogState>(null);
   const webPreview = isWebPreview();
   const isMobile = layoutMode === 'phone';
+  const copy = getCopy(snapshot.locale);
 
   const activeSpace =
     snapshot.spaces.find((space) => space.id === snapshot.activeSpaceId) ?? snapshot.spaces[0];
@@ -212,12 +222,19 @@ export default function App() {
 
   const showNotice = (title: string, message: string) => {
     setDialogState({
-      confirmLabel: 'Close',
+      confirmLabel: copy.dialogs.close,
       message,
       onConfirm: () => setDialogState(null),
       title,
       variant: 'notice',
     });
+  };
+
+  const handleLocaleChange = (nextLocale: AppLocale) => {
+    updateSnapshot((current) => ({
+      ...current,
+      locale: nextLocale,
+    }));
   };
 
   const handleToggleTheme = () => {
@@ -236,7 +253,7 @@ export default function App() {
     anchor.download = buildSnapshotFilename();
     anchor.click();
     URL.revokeObjectURL(url);
-    setBannerMessage('Snapshot exported as JSON.');
+    setBannerMessage(copy.banners.exported);
   };
 
   const handleImportSnapshot = () => {
@@ -263,12 +280,12 @@ export default function App() {
           });
           setHydrated(true);
           setSaveStatus('saved');
-          setBannerMessage('Snapshot imported successfully.');
+          setBannerMessage(getCopy(imported.locale).banners.imported);
           setIsSidebarOpen(false);
         });
       } catch (error) {
         console.warn('Failed to import snapshot JSON.', error);
-        showNotice('Import failed', 'Please choose a valid Whybrary JSON snapshot.');
+        showNotice(copy.notices.importFailedTitle, copy.notices.importFailedMessage);
       }
     };
 
@@ -277,10 +294,10 @@ export default function App() {
 
   const handleResetPreviewData = () => {
     setDialogState({
-      confirmLabel: 'Reset Data',
-      message: 'Clear the browser-local Whybrary snapshot and replace it with a fresh default space?',
+      confirmLabel: copy.dialogs.resetBrowserConfirm,
+      message: copy.dialogs.resetBrowserMessage,
       onConfirm: () => {
-        const fallback = buildDefaultState();
+        const fallback = buildDefaultState(snapshot.locale);
         clearPreviewSnapshot();
         setEditingNodeId(null);
         setIsMapEditing(false);
@@ -288,12 +305,12 @@ export default function App() {
         setSnapshot(fallback);
         setHydrated(true);
         setSaveStatus('saved');
-        setBannerMessage('Browser-local snapshot reset.');
+        setBannerMessage(getCopy(fallback.locale).banners.reset);
         setDialogState(null);
         setIsSidebarOpen(false);
         setMobileView('map');
       },
-      title: 'Reset browser data',
+      title: copy.dialogs.resetBrowserTitle,
       tone: 'danger',
     });
   };
@@ -316,7 +333,10 @@ export default function App() {
     setEditingNodeId(null);
     setShowWelcome(false);
     updateSnapshot((current) => {
-      const nextSpace = createSpace(`Space ${current.spaces.length + 1}`);
+      const nextSpace = createSpace(
+        current.locale === 'zh' ? `空间 ${current.spaces.length + 1}` : `Space ${current.spaces.length + 1}`,
+        current.locale,
+      );
 
       return {
         ...current,
@@ -342,15 +362,18 @@ export default function App() {
     }
 
     setDialogState({
-      confirmLabel: 'Delete Space',
-      message: `Delete "${activeSpace.name || 'Untitled Space'}"?`,
+      confirmLabel: copy.dialogs.deleteSpaceConfirm,
+      message: copy.dialogs.deleteSpaceMessage(activeSpace.name || copy.sidebar.untitledSpace),
       onConfirm: () => {
         setEditingNodeId(null);
         setIsMapEditing(false);
         updateSnapshot((current) => {
           const remaining = current.spaces.filter((space) => space.id !== current.activeSpaceId);
           if (remaining.length === 0) {
-            const replacement = createSpace('My First Space');
+            const replacement = createSpace(
+              current.locale === 'zh' ? '我的第一个空间' : 'My First Space',
+              current.locale,
+            );
 
             return {
               ...current,
@@ -370,7 +393,7 @@ export default function App() {
           setMobileView('map');
         }
       },
-      title: 'Delete current space',
+      title: copy.dialogs.deleteSpaceTitle,
       tone: 'danger',
     });
   };
@@ -455,16 +478,22 @@ export default function App() {
 
   const handleRequestDeleteNodes = (nodeIds: string[], labels: string[]) => {
     const preview = labels.slice(0, 3).join(', ');
-    const suffix = nodeIds.length > 3 ? ` and ${nodeIds.length - 3} more` : '';
+    const suffix =
+      nodeIds.length > 3
+        ? snapshot.locale === 'zh'
+          ? `，以及另外 ${nodeIds.length - 3} 个`
+          : ` and ${nodeIds.length - 3} more`
+        : '';
 
     setDialogState({
-      confirmLabel: nodeIds.length > 1 ? 'Delete Nodes' : 'Delete Node',
-      message: `Delete ${nodeIds.length} selected node${nodeIds.length > 1 ? 's' : ''}? ${preview}${suffix}`,
+      confirmLabel:
+        nodeIds.length > 1 ? copy.dialogs.deleteNodesConfirmMultiple : copy.dialogs.deleteNodesConfirmSingle,
+      message: copy.dialogs.deleteNodesMessage(nodeIds.length, preview, suffix),
       onConfirm: () => {
         commitDeleteNodes(nodeIds);
         setDialogState(null);
       },
-      title: 'Delete selected nodes',
+      title: copy.dialogs.deleteNodesTitle,
       tone: 'danger',
     });
   };
@@ -572,18 +601,20 @@ export default function App() {
     <SpaceSidebar
       activeSpaceId={snapshot.activeSpaceId}
       activeSpaceName={activeSpace?.name ?? ''}
-      drawerTitle={drawer ? 'Space Library' : 'Spaces'}
+      drawerTitle={drawer ? (snapshot.locale === 'zh' ? '空间库' : 'Space Library') : copy.sidebar.drawerTitle}
       isDrawer={drawer}
+      locale={snapshot.locale}
       onClose={drawer ? () => setIsSidebarOpen(false) : undefined}
       onCreateSpace={handleCreateSpace}
       onDeleteActiveSpace={handleDeleteActiveSpace}
       onExportSnapshot={handleExportSnapshot}
       onImportSnapshot={handleImportSnapshot}
+      onOpenSettings={() => setIsSettingsOpen(true)}
       onResetPreviewData={handleResetPreviewData}
       onRenameActiveSpace={handleRenameActiveSpace}
       onSelectSpace={handleSelectSpace}
       onToggleTheme={handleToggleTheme}
-      saveLabel={saveStatusLabel(saveStatus)}
+      saveLabel={saveStatusLabel(saveStatus, snapshot.locale)}
       spaces={snapshot.spaces}
       theme={snapshot.theme}
     />
@@ -593,9 +624,9 @@ export default function App() {
     return (
       <main className="loading-shell">
         <div className="loading-card">
-          <p className="eyebrow">Whybrary</p>
-          <h1>Preparing your local space...</h1>
-          <p>Booting the graph, loading the list, and opening the SQLite snapshot.</p>
+          <p className="eyebrow">{copy.appName}</p>
+          <h1>{copy.loading.title}</h1>
+          <p>{copy.loading.body}</p>
         </div>
       </main>
     );
@@ -612,23 +643,21 @@ export default function App() {
         <header className="workspace__header">
           <div className="workspace__title">
             <div>
-              <h2>{activeSpace.name || 'Untitled Space'}</h2>
+              <h2>{activeSpace.name || copy.sidebar.untitledSpace}</h2>
               <p className="workspace__summary">
-                <span className="summary-card">{activeSpace.nodes.length} points</span>
+                <span className="summary-card">{copy.workspace.points(activeSpace.nodes.length)}</span>
                 <span className="summary-card">
-                  {activeSpace.todos.filter((todo) => !todo.completed).length} open tasks
+                  {copy.workspace.openTasks(activeSpace.todos.filter((todo) => !todo.completed).length)}
                 </span>
               </p>
               {webPreview ? (
-                <p className="workspace__subhead">
-                  Web preview mode. Your data stays in this browser unless you export JSON.
-                </p>
+                <p className="workspace__subhead">{copy.workspace.webPreviewSubhead}</p>
               ) : null}
             </div>
 
             {isMobile ? (
               <button className="button workspace__spaces-button" onClick={() => setIsSidebarOpen(true)} type="button">
-                Spaces
+                {copy.workspace.spacesButton}
               </button>
             ) : null}
           </div>
@@ -642,6 +671,7 @@ export default function App() {
           {showTodo ? (
             <WhyTodoPanel
               isMobile={isMobile}
+              locale={snapshot.locale}
               onAddTodo={handleAddTodo}
               onChangeTodoText={handleChangeTodoText}
               onDeleteTodo={handleDeleteTodo}
@@ -654,6 +684,7 @@ export default function App() {
             <BrainCanvas
               editingNodeId={editingNodeId}
               isEditMode={isMapEditing}
+              locale={snapshot.locale}
               isMobile={isMobile}
               onAddNeuron={handleAddNeuron}
               onDeleteNodes={handleDeleteNodes}
@@ -674,39 +705,36 @@ export default function App() {
         </div>
 
         {showWelcome ? (
-          <section className="welcome-panel" role="region" aria-label="Whybrary web welcome">
+          <section className="welcome-panel" role="region" aria-label={copy.welcome.regionLabel}>
             <div className="welcome-panel__card">
-              <p className="eyebrow">Whybrary on the web</p>
-              <h3>Try it in the browser, then carry your graph with you.</h3>
-              <p>
-                This Pages version is meant for quick use, easy sharing, and JSON import/export.
-                Nothing is uploaded. Your preview data stays in this browser unless you export it.
-              </p>
+              <p className="eyebrow">{copy.welcome.eyebrow}</p>
+              <h3>{copy.welcome.title}</h3>
+              <p>{copy.welcome.body}</p>
 
               <div className="welcome-panel__actions">
                 <button className="button button--accent" onClick={() => setShowWelcome(false)} type="button">
-                  Start Editing
+                  {copy.welcome.startEditing}
                 </button>
                 <button className="button" onClick={handleImportSnapshot} type="button">
-                  Import Existing JSON
+                  {copy.welcome.importJson}
                 </button>
                 <button className="button" onClick={handleExportSnapshot} type="button">
-                  Export Current JSON
+                  {copy.welcome.exportJson}
                 </button>
               </div>
 
               <div className="welcome-panel__notes">
                 <div className="welcome-note">
-                  <strong>Fast to try</strong>
-                  <span>Open the page and start editing immediately with no install step.</span>
+                  <strong>{copy.welcome.fastTitle}</strong>
+                  <span>{copy.welcome.fastBody}</span>
                 </div>
                 <div className="welcome-note">
-                  <strong>Portable content</strong>
-                  <span>Export one JSON file and re-import it later on the web or desktop app.</span>
+                  <strong>{copy.welcome.portableTitle}</strong>
+                  <span>{copy.welcome.portableBody}</span>
                 </div>
                 <div className="welcome-note">
-                  <strong>Signing deferred</strong>
-                  <span>Desktop signing stays intentionally deferred until broader distribution requires it.</span>
+                  <strong>{copy.welcome.signingTitle}</strong>
+                  <span>{copy.welcome.signingBody}</span>
                 </div>
               </div>
 
@@ -716,7 +744,7 @@ export default function App() {
                 rel="noreferrer"
                 target="_blank"
               >
-                Open desktop releases
+                {copy.welcome.releases}
               </a>
             </div>
           </section>
@@ -731,21 +759,21 @@ export default function App() {
               onClick={() => setMobileView('map')}
               type="button"
             >
-              Map
+              {copy.nav.map}
             </button>
             <button
               className={`mobile-nav__item ${mobileView === 'todo' ? 'is-active' : ''}`}
               onClick={() => setMobileView('todo')}
               type="button"
             >
-              To-Do
+              {copy.nav.todo}
             </button>
             <button
               className={`mobile-nav__item ${isSidebarOpen ? 'is-active' : ''}`}
               onClick={() => setIsSidebarOpen(true)}
               type="button"
             >
-              Spaces
+              {copy.nav.spaces}
             </button>
           </nav>
 
@@ -759,8 +787,17 @@ export default function App() {
         </>
       ) : null}
 
+      {isSettingsOpen ? (
+        <SettingsDialog
+          locale={snapshot.locale}
+          onClose={() => setIsSettingsOpen(false)}
+          onLocaleChange={handleLocaleChange}
+        />
+      ) : null}
+
       {dialogState ? (
         <AppDialog
+          cancelLabel={copy.dialogs.cancel}
           confirmLabel={dialogState.confirmLabel}
           message={dialogState.message}
           onCancel={closeDialog}

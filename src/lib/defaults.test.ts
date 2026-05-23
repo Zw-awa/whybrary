@@ -14,6 +14,7 @@ describe('defaults', () => {
 
   it('normalizes legacy snapshots while stripping legacy type fields', () => {
     const normalized = normalizeSnapshot({
+      locale: 'zh',
       theme: 'dark',
       activeSpaceId: 'space-1',
       lastOpenedAt: '2026-01-01T00:00:00.000Z',
@@ -52,6 +53,7 @@ describe('defaults', () => {
 
   it('falls back to the default viewport when the persisted viewport is invalid', () => {
     const normalized = normalizeSnapshot({
+      locale: 'en',
       theme: 'light',
       activeSpaceId: 'space-1',
       lastOpenedAt: '2026-01-01T00:00:00.000Z',
@@ -70,5 +72,27 @@ describe('defaults', () => {
     });
 
     expect(normalized.spaces[0].viewport).toEqual({ x: 0, y: 0, zoom: 0.9 });
+  });
+
+  it('defaults missing locale values to english for older snapshots', () => {
+    const normalized = normalizeSnapshot({
+      theme: 'dark',
+      activeSpaceId: 'space-1',
+      lastOpenedAt: '2026-01-01T00:00:00.000Z',
+      spaces: [
+        {
+          id: 'space-1',
+          name: 'Legacy Locale Space',
+          nodes: [],
+          edges: [],
+          todos: [],
+          viewport: { x: 0, y: 0, zoom: 1 },
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    } as never);
+
+    expect(normalized.locale).toBe('en');
   });
 });

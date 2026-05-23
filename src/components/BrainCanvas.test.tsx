@@ -49,6 +49,7 @@ function renderCanvas(overrides?: Partial<React.ComponentProps<typeof BrainCanva
     <BrainCanvas
       editingNodeId={null}
       isEditMode
+      locale="en"
       onAddNeuron={onAddNeuron}
       onDeleteNodes={onDeleteNodes}
       onFinishRenameNode={onFinishRenameNode}

@@ -2,7 +2,6 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
-private-docs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -17,15 +16,6 @@ pnpm-debug.log*
 .kotlin-daemon/
 .temp/
 .tmp/
-.idea/
-.vs/
-.vscode/
-.claude/
-.codex/
-CLAUDE.md
-AGENT.md
-*.swp
-*.swo
 coverage/
 *.db
 *.db-shm
@@ -39,4 +29,3 @@ coverage/
 Thumbs.db
 .DS_Store
 config.yaml
-config.json

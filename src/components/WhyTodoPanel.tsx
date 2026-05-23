@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react';
-import type { Space } from '../types';
+import { getCopy } from '../lib/i18n';
+import type { AppLocale, Space } from '../types';
 import { FloatingActions } from './FloatingActions';
 
 type WhyTodoPanelProps = {
   isMobile?: boolean;
+  locale: AppLocale;
   space: Space;
   onAddTodo: (text: string) => void;
   onChangeTodoText: (todoId: string, nextText: string) => void;
@@ -13,12 +15,14 @@ type WhyTodoPanelProps = {
 
 export function WhyTodoPanel({
   isMobile = false,
+  locale,
   space,
   onAddTodo,
   onChangeTodoText,
   onDeleteTodo,
   onToggleTodo,
 }: WhyTodoPanelProps) {
+  const copy = getCopy(locale);
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -83,7 +87,7 @@ export function WhyTodoPanel({
   return (
     <section className="panel panel--todo">
       <div className="panel__header">
-        <h2>To-Do</h2>
+        <h2>{copy.todo.title}</h2>
       </div>
 
       <form className="todo-composer" onSubmit={handleSubmit}>
@@ -97,12 +101,12 @@ export function WhyTodoPanel({
               submitDraft();
             }
           }}
-          placeholder="Add one short task..."
+          placeholder={copy.todo.addPlaceholder}
           type="text"
           value={draft}
         />
         <button className="button button--accent" onClick={submitDraft} type="button">
-          Add
+          {copy.todo.add}
         </button>
       </form>
 
@@ -117,7 +121,7 @@ export function WhyTodoPanel({
               }}
             >
               <button
-                aria-label={todo.completed ? 'Mark as open' : 'Mark as completed'}
+                aria-label={todo.completed ? copy.todo.markOpen : copy.todo.markCompleted}
                 className="todo-check"
                 onClick={() => onToggleTodo(todo.id)}
                 type="button"
@@ -130,19 +134,19 @@ export function WhyTodoPanel({
                   className="todo-body__input"
                   maxLength={160}
                   onChange={(event) => onChangeTodoText(todo.id, event.target.value)}
-                  placeholder="Empty task"
+                  placeholder={copy.todo.emptyTask}
                   type="text"
                   value={todo.text}
                 />
               </div>
 
               <button
-                aria-label="Delete todo"
+                aria-label={copy.todo.deleteTodo}
                 className="todo-remove"
                 onClick={() => onDeleteTodo(todo.id)}
                 type="button"
               >
-                Remove
+                {copy.todo.remove}
               </button>
             </div>
           ))}
@@ -152,28 +156,29 @@ export function WhyTodoPanel({
           actions={[
             {
               id: 'top',
-              label: '顶部',
-              title: 'Back to top',
+              label: copy.todo.dockTop,
+              title: copy.todo.dockTopTitle,
               onPress: scrollToTop,
               disabled: space.todos.length === 0,
             },
             {
               id: 'first-open',
-              label: '首个未完',
-              title: 'Jump to the first open todo',
+              label: copy.todo.dockFirstOpen,
+              title: copy.todo.dockFirstOpenTitle,
               onPress: scrollToFirstOpen,
               disabled: openTodos.length === 0,
             },
             {
               id: 'next-open',
-              label: '下个未完',
-              title: 'Jump to the next open todo',
+              label: copy.todo.dockNextOpen,
+              title: copy.todo.dockNextOpenTitle,
               onPress: scrollToNextOpen,
               disabled: openTodos.length === 0,
             },
           ]}
           containerRef={listRef}
           isMobile={isMobile}
+          locale={locale}
         />
       </div>
     </section>

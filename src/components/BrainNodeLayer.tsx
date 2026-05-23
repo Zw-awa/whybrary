@@ -1,6 +1,7 @@
 import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from 'react';
+import { getCopy } from '../lib/i18n';
 import type { SimNode } from '../lib/brainPhysics';
-import type { BrainNode, Space } from '../types';
+import type { AppLocale, BrainNode, Space } from '../types';
 
 const LABEL_OFFSET = 18;
 
@@ -8,6 +9,7 @@ type BrainNodeLayerProps = {
   editingNodeId: string | null;
   isEditMode: boolean;
   isMobile?: boolean;
+  locale: AppLocale;
   nodes: SimNode[];
   onDotClick: (event: ReactMouseEvent<HTMLButtonElement>, nodeId: string) => void;
   onFinishRenameNode: () => void;
@@ -25,6 +27,7 @@ export function BrainNodeLayer({
   editingNodeId,
   isEditMode,
   isMobile = false,
+  locale,
   nodes,
   onDotClick,
   onFinishRenameNode,
@@ -37,6 +40,8 @@ export function BrainNodeLayer({
   spaceNodes,
   viewport,
 }: BrainNodeLayerProps) {
+  const copy = getCopy(locale);
+
   return (
     <div className="mind-map__nodes">
       {nodes.map((node) => {
@@ -108,7 +113,7 @@ export function BrainNodeLayer({
                     onFinishRenameNode();
                   }
                 }}
-                placeholder="Untitled"
+                placeholder={copy.map.untitled}
                 type="text"
                 value={label}
               />
@@ -133,7 +138,7 @@ export function BrainNodeLayer({
                 }}
                 type="button"
               >
-                {label || 'Untitled'}
+                {label || copy.map.untitled}
               </button>
             )}
           </div>

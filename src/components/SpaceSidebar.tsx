@@ -1,4 +1,5 @@
-import type { Space, ThemeMode } from '../types';
+import { type AppLocale, type Space, type ThemeMode } from '../types';
+import { getCopy } from '../lib/i18n';
 
 type SpaceSidebarProps = {
   spaces: Space[];
@@ -6,12 +7,14 @@ type SpaceSidebarProps = {
   activeSpaceName: string;
   drawerTitle?: string;
   isDrawer?: boolean;
+  locale: AppLocale;
   theme: ThemeMode;
   saveLabel: string;
   onClose?: () => void;
   onExportSnapshot: () => void;
   onImportSnapshot: () => void;
   onResetPreviewData: () => void;
+  onOpenSettings: () => void;
   onSelectSpace: (spaceId: string) => void;
   onCreateSpace: () => void;
   onRenameActiveSpace: (nextName: string) => void;
@@ -25,59 +28,66 @@ export function SpaceSidebar({
   activeSpaceName,
   drawerTitle = 'Spaces',
   isDrawer = false,
+  locale,
   theme,
   saveLabel,
   onClose,
   onExportSnapshot,
   onImportSnapshot,
   onResetPreviewData,
+  onOpenSettings,
   onSelectSpace,
   onCreateSpace,
   onRenameActiveSpace,
   onDeleteActiveSpace,
   onToggleTheme,
 }: SpaceSidebarProps) {
+  const copy = getCopy(locale);
+
   return (
     <aside className={`sidebar ${isDrawer ? 'sidebar--drawer' : ''}`}>
       <div className="sidebar__brand">
         <div>
           <p className="eyebrow">{drawerTitle}</p>
-          <h1>Whybrary</h1>
+          <h1>{copy.appName}</h1>
           <p className="sidebar__status-note">{saveLabel}</p>
         </div>
         {onClose ? (
           <button
-            aria-label="Close spaces"
+            aria-label={copy.sidebar.closeSpaces}
             className="sidebar__close"
             onClick={onClose}
             type="button"
           >
-            Close
+            {copy.settings.close}
           </button>
         ) : null}
       </div>
 
       <div className="sidebar__controls">
         <button className="button button--accent" onClick={onCreateSpace} type="button">
-          New Space
+          {copy.sidebar.newSpace}
         </button>
         <button className="button button--ghost" onClick={onExportSnapshot} type="button">
-          Export JSON
+          {copy.sidebar.exportJson}
         </button>
         <button className="button button--ghost" onClick={onImportSnapshot} type="button">
-          Import JSON
+          {copy.sidebar.importJson}
         </button>
         <button className="button button--ghost" onClick={onResetPreviewData} type="button">
-          Reset Browser Data
+          {copy.sidebar.resetBrowserData}
+        </button>
+        <button className="button button--ghost" onClick={onOpenSettings} type="button">
+          {copy.sidebar.settings}
         </button>
         <button className="button button--ghost" onClick={onToggleTheme} type="button">
-          {theme === 'dark' ? 'Use Light Theme' : 'Use Dark Theme'}
+          {theme === 'dark' ? copy.sidebar.useLightTheme : copy.sidebar.useDarkTheme}
         </button>
       </div>
 
       <section className="sidebar__section sidebar__section--spaces">
         <div className="section-heading">
-          <strong>Spaces</strong>
+          <strong>{copy.sidebar.spaces}</strong>
           <span>{spaces.length}</span>
         </div>
 
@@ -93,9 +103,7 @@ export function SpaceSidebar({
                 type="button"
               >
                 <strong>{space.name}</strong>
-                <span>
-                  {space.nodes.length} points · {openCount} open
-                </span>
+                <span>{copy.sidebar.pointsOpen(space.nodes.length, openCount)}</span>
               </button>
             );
           })}
@@ -104,18 +112,18 @@ export function SpaceSidebar({
 
       <section className="sidebar__section sidebar__section--editor">
         <div className="section-heading">
-          <strong>Current</strong>
+          <strong>{copy.sidebar.current}</strong>
           <button className="link-button" onClick={onDeleteActiveSpace} type="button">
-            Delete
+            {copy.sidebar.delete}
           </button>
         </div>
 
         <label className="field">
-          <span>Name</span>
+          <span>{copy.sidebar.name}</span>
           <input
             className="field__input"
             onChange={(event) => onRenameActiveSpace(event.target.value)}
-            placeholder="Untitled Space"
+            placeholder={copy.sidebar.untitledSpace}
             type="text"
             value={activeSpaceName}
           />

@@ -1,10 +1,13 @@
+import { getCopy } from '../lib/i18n';
 import type { SimNode } from '../lib/brainPhysics';
+import type { AppLocale } from '../types';
 
 type BrainInfoPanelProps = {
   edgesCount: number;
   infoSelection: string[];
   isMobile?: boolean;
   isMultiSelect: boolean;
+  locale: AppLocale;
   nodes: SimNode[];
   onClose?: () => void;
   onClearSelection: () => void;
@@ -20,6 +23,7 @@ export function BrainInfoPanel({
   infoSelection,
   isMobile = false,
   isMultiSelect,
+  locale,
   nodes,
   onClose,
   onClearSelection,
@@ -29,6 +33,8 @@ export function BrainInfoPanel({
   onToggleMultiSelect,
   trackedNodeId,
 }: BrainInfoPanelProps) {
+  const copy = getCopy(locale);
+
   return (
     <aside
       className={`graph-info ${isMobile ? 'graph-info--sheet' : ''}`}
@@ -37,12 +43,12 @@ export function BrainInfoPanel({
     >
       <div className="graph-info__topbar">
         <div className="graph-info__summary">
-          <strong>{nodes.length} nodes</strong>
-          <span>{edgesCount} links</span>
+          <strong>{copy.info.nodes(nodes.length)}</strong>
+          <span>{copy.info.links(edgesCount)}</span>
         </div>
         {onClose ? (
           <button className="graph-info__dismiss" onClick={onClose} type="button">
-            Close
+            {copy.info.close}
           </button>
         ) : null}
       </div>
@@ -53,7 +59,7 @@ export function BrainInfoPanel({
           onClick={onToggleMultiSelect}
           type="button"
         >
-          {isMultiSelect ? 'Multi On' : 'Multi Off'}
+          {isMultiSelect ? copy.info.multiOn : copy.info.multiOff}
         </button>
         <button
           className="graph-info__action"
@@ -61,10 +67,10 @@ export function BrainInfoPanel({
           type="button"
           disabled={!isMultiSelect}
         >
-          Select All
+          {copy.info.selectAll}
         </button>
         <button className="graph-info__action" onClick={onClearSelection} type="button">
-          Clear
+          {copy.info.clear}
         </button>
         <button
           className="graph-info__action graph-info__action--danger"
@@ -72,7 +78,7 @@ export function BrainInfoPanel({
           onClick={onDeleteSelection}
           type="button"
         >
-          Delete Selected
+          {copy.info.deleteSelected}
         </button>
       </div>
 
@@ -84,7 +90,7 @@ export function BrainInfoPanel({
             onClick={() => onNodeClick(node.id)}
             type="button"
           >
-            <strong>{node.label || `Untitled ${index + 1}`}</strong>
+            <strong>{node.label || copy.info.untitledNode(index + 1)}</strong>
             <span>
               {node.x.toFixed(0)}, {node.y.toFixed(0)}
             </span>

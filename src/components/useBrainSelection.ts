@@ -4,6 +4,7 @@ type UseBrainSelectionArgs = {
   clearTrackedNode: () => void;
   isEditMode: boolean;
   nodeLabels: Array<{ id: string; label: string }>;
+  untitledLabel: string;
   onDeleteNodes: (nodeIds: string[]) => void;
   onRequestDeleteSelection?: (nodeIds: string[], labels: string[]) => void;
   onToggleConnection: (sourceId: string, targetId: string) => void;
@@ -14,6 +15,7 @@ export function useBrainSelection({
   clearTrackedNode,
   isEditMode,
   nodeLabels,
+  untitledLabel,
   onDeleteNodes,
   onRequestDeleteSelection,
   onToggleConnection,
@@ -111,7 +113,7 @@ export function useBrainSelection({
     }
 
     const labels = infoSelection.map(
-      (nodeId) => nodeLabels.find((node) => node.id === nodeId)?.label || 'Untitled',
+      (nodeId) => nodeLabels.find((node) => node.id === nodeId)?.label || untitledLabel,
     );
 
     if (onRequestDeleteSelection) {

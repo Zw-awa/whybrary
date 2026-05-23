@@ -1,4 +1,5 @@
 export type ThemeMode = 'light' | 'dark';
+export type AppLocale = 'en' | 'zh';
 export type DeviceLayoutMode = 'phone' | 'tablet' | 'desktop';
 export type MobilePrimaryView = 'map' | 'todo' | 'spaces';
 
@@ -51,6 +52,7 @@ export type Space = {
 };
 
 export type AppSnapshot = {
+  locale: AppLocale;
   theme: ThemeMode;
   spaces: Space[];
   activeSpaceId: string | null;

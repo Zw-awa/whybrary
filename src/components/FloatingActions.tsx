@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import type { AppLocale } from '../types';
 
 type FloatingAction = {
   id: string;
@@ -12,6 +13,7 @@ type FloatingActionsProps = {
   actions: FloatingAction[];
   containerRef: RefObject<HTMLDivElement>;
   isMobile?: boolean;
+  locale: AppLocale;
 };
 
 type Position = {
@@ -38,6 +40,7 @@ export function FloatingActions({
   actions,
   containerRef,
   isMobile = false,
+  locale,
 }: FloatingActionsProps) {
   const dockRef = useRef<HTMLDivElement>(null);
   const dragOffsetRef = useRef<Position | null>(null);
@@ -144,7 +147,7 @@ export function FloatingActions({
     >
       {!isMobile ? (
         <div className="floating-actions__grip" onPointerDown={handlePointerDown}>
-          Drag
+          {locale === 'zh' ? '拖动' : 'Drag'}
         </div>
       ) : null}
 

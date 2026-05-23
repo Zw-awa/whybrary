@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
+import { getCopy } from '../lib/i18n';
 import { buildSimNodes, findSpawnPosition, type SimNode } from '../lib/brainPhysics';
-import type { BrainNode, Space } from '../types';
+import type { AppLocale, BrainNode, Space } from '../types';
 import { BrainEdgeLayer } from './BrainEdgeLayer';
 import { BrainInfoPanel } from './BrainInfoPanel';
 import { BrainNodeLayer } from './BrainNodeLayer';
@@ -12,6 +13,7 @@ import { useBrainViewport } from './useBrainViewport';
 type BrainCanvasProps = {
   editingNodeId: string | null;
   isMobile?: boolean;
+  locale: AppLocale;
   onDeleteNodes: (nodeIds: string[]) => void;
   onRequestDeleteNodes?: (nodeIds: string[], labels: string[]) => void;
   isEditMode: boolean;
@@ -47,6 +49,7 @@ function appendTransientNode(current: SimNode[], nextNode: BrainNode): SimNode[]
 export function BrainCanvas({
   editingNodeId,
   isMobile = false,
+  locale,
   onDeleteNodes,
   onRequestDeleteNodes,
   isEditMode,
@@ -60,6 +63,7 @@ export function BrainCanvas({
   onViewportChange,
   space,
 }: BrainCanvasProps) {
+  const copy = getCopy(locale);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
   const simNodesRef = useRef<SimNode[]>(buildSimNodes(space));
@@ -99,6 +103,7 @@ export function BrainCanvas({
     clearTrackedNode,
     isEditMode,
     nodeLabels: selectionNodeLabels,
+    untitledLabel: copy.map.untitled,
     onDeleteNodes,
     onRequestDeleteSelection: onRequestDeleteNodes,
     onToggleConnection,
@@ -131,7 +136,7 @@ export function BrainCanvas({
   };
 
   const selectedNodeLabel =
-    selectionNodeLabels.find((node) => node.id === selectedNodeId)?.label || 'Untitled';
+    selectionNodeLabels.find((node) => node.id === selectedNodeId)?.label || copy.map.untitled;
 
   const requestSelectedNodeDeletion = () => {
     if (!selectedNodeId || !onRequestDeleteNodes) {
@@ -166,7 +171,7 @@ export function BrainCanvas({
       }}
       type="button"
     >
-      New Point
+      {copy.map.newPoint}
     </button>
   );
 
@@ -186,7 +191,7 @@ export function BrainCanvas({
   return (
     <section className="panel panel--graph">
       <div className="panel__header">
-        <h2>Mind Map</h2>
+        <h2>{copy.map.title}</h2>
         {!isMobile ? (
           <div className="panel__actions">
             <button
@@ -194,10 +199,10 @@ export function BrainCanvas({
               onClick={() => setIsInfoOpen((current) => !current)}
               type="button"
             >
-              {isInfoOpen ? 'Hide Info' : 'Show Info'}
+              {isInfoOpen ? copy.map.hideInfo : copy.map.showInfo}
             </button>
             <button className="button button--ghost" onClick={onToggleEditMode} type="button">
-              {isEditMode ? 'Done' : 'Edit Content'}
+              {isEditMode ? copy.map.done : copy.map.editContent}
             </button>
             {isEditMode ? (
               <button
@@ -205,13 +210,13 @@ export function BrainCanvas({
                 onClick={toggleConnectMode}
                 type="button"
               >
-                {isConnectMode ? 'Link Mode On' : 'Link Mode Off'}
+                {isConnectMode ? copy.map.linkModeOn : copy.map.linkModeOff}
               </button>
             ) : null}
             {isEditMode ? renderAddNodeAction() : null}
           </div>
         ) : (
-          <div className="graph-mode-pill">{isEditMode ? 'Editing enabled' : 'Viewing mode'}</div>
+          <div className="graph-mode-pill">{isEditMode ? copy.map.editingEnabled : copy.map.viewingMode}</div>
         )}
       </div>
 
@@ -232,6 +237,7 @@ export function BrainCanvas({
             infoSelection={infoSelection}
             isMobile={isMobile}
             isMultiSelect={isInfoMultiSelect}
+            locale={locale}
             nodes={simNodes}
             onClose={() => setIsInfoOpen(false)}
             onClearSelection={clearSelection}
@@ -249,6 +255,7 @@ export function BrainCanvas({
           editingNodeId={editingNodeId}
           isEditMode={isEditMode}
           isMobile={isMobile}
+          locale={locale}
           nodes={simNodes}
           onDotClick={withNodeClick}
           onFinishRenameNode={onFinishRenameNode}
@@ -276,16 +283,16 @@ export function BrainCanvas({
           <>
             {selectedNodeId && isEditMode ? (
               <div className="graph-selection-bar">
-                <strong>{selectedNodeLabel || 'Untitled'}</strong>
+                <strong>{selectedNodeLabel || copy.map.untitled}</strong>
                 <div className="graph-selection-bar__actions">
                   <button className="button" onClick={() => onStartRenameNode(selectedNodeId)} type="button">
-                    Rename
+                    {copy.map.rename}
                   </button>
                   <button className="button button--danger" onClick={requestSelectedNodeDeletion} type="button">
-                    Delete
+                    {copy.map.delete}
                   </button>
                   <button className="button" onClick={() => setSelectedNodeId(null)} type="button">
-                    Clear
+                    {copy.map.clear}
                   </button>
                 </div>
               </div>
@@ -293,10 +300,10 @@ export function BrainCanvas({
 
             <div className="graph-mobile-bar">
               <button className="button" onClick={() => setIsInfoOpen((current) => !current)} type="button">
-                {isInfoOpen ? 'Hide Info' : 'Show Info'}
+                {isInfoOpen ? copy.map.hideInfo : copy.map.showInfo}
               </button>
               <button className="button button--ghost" onClick={onToggleEditMode} type="button">
-                {isEditMode ? 'Done' : 'Edit'}
+                {isEditMode ? copy.map.done : copy.map.edit}
               </button>
               {isEditMode ? (
                 <button
@@ -304,7 +311,7 @@ export function BrainCanvas({
                   onClick={toggleConnectMode}
                   type="button"
                 >
-                  {isConnectMode ? 'Link On' : 'Link'}
+                  {isConnectMode ? copy.map.linkOn : copy.map.link}
                 </button>
               ) : null}
               {isEditMode ? renderAddNodeAction() : null}

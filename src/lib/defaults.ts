@@ -1,4 +1,5 @@
 import type {
+  AppLocale,
   AppSnapshot,
   BrainEdge,
   BrainNode,
@@ -16,6 +17,53 @@ function safeTheme(): ThemeMode {
   }
 
   return 'light';
+}
+
+function safeLocale(): AppLocale {
+  if (typeof navigator !== 'undefined') {
+    const preferred = navigator.language?.toLowerCase() ?? '';
+    if (preferred.startsWith('zh')) {
+      return 'zh';
+    }
+  }
+
+  return 'en';
+}
+
+function defaultSpaceName(locale: AppLocale): string {
+  return locale === 'zh' ? '我的第一个空间' : 'My First Space';
+}
+
+function fallbackSpaceName(locale: AppLocale): string {
+  return locale === 'zh' ? '未命名空间' : 'Untitled Space';
+}
+
+function fallbackNodeLabel(locale: AppLocale): string {
+  return locale === 'zh' ? '未命名' : 'Untitled';
+}
+
+function defaultRootLabel(locale: AppLocale): string {
+  return locale === 'zh' ? '为什么' : 'Why';
+}
+
+function defaultBranchLabel(locale: AppLocale): string {
+  return locale === 'zh' ? '因为' : 'Because';
+}
+
+function defaultTodos(locale: AppLocale): string[] {
+  if (locale === 'zh') {
+    return [
+      '用一句简短的话写下这个原因。',
+      '把它连接到一个支撑它的节点。',
+      '只保留今天真正值得关注的内容。',
+    ];
+  }
+
+  return [
+    'Write the reason in one short line.',
+    'Connect it to a supporting neuron.',
+    'Keep only what deserves focus today.',
+  ];
 }
 
 export function nowIso(): string {
@@ -80,31 +128,28 @@ function createTodo(text: string): Space['todos'][number] {
   };
 }
 
-export function createSpace(name: string): Space {
+export function createSpace(name: string, locale: AppLocale = 'en'): Space {
   const stamp = nowIso();
-  const root = createNeuronNode('Why', 220, 180);
-  const branch = createNeuronNode('Because', 420, 240);
+  const root = createNeuronNode(defaultRootLabel(locale), 220, 180);
+  const branch = createNeuronNode(defaultBranchLabel(locale), 420, 240);
 
   return {
     id: crypto.randomUUID(),
     name,
     nodes: [root, branch],
     edges: [createEdge(root.id, branch.id)],
-    todos: [
-      createTodo('Write the reason in one short line.'),
-      createTodo('Connect it to a supporting neuron.'),
-      createTodo('Keep only what deserves focus today.'),
-    ],
+    todos: defaultTodos(locale).map(createTodo),
     viewport: defaultViewport(),
     createdAt: stamp,
     updatedAt: stamp,
   };
 }
 
-export function buildDefaultState(): AppSnapshot {
-  const firstSpace = createSpace('My First Space');
+export function buildDefaultState(locale = safeLocale()): AppSnapshot {
+  const firstSpace = createSpace(defaultSpaceName(locale), locale);
 
   return {
+    locale,
     theme: safeTheme(),
     spaces: [firstSpace],
     activeSpaceId: firstSpace.id,
@@ -113,6 +158,7 @@ export function buildDefaultState(): AppSnapshot {
 }
 
 function normalizeSpace(space: Space): Space {
+  const locale = (space as Space & { locale?: AppLocale }).locale === 'zh' ? 'zh' : 'en';
   const rawNodes = (space.nodes ?? []).map((node) => ({
     id: node.id,
     position: {
@@ -120,7 +166,7 @@ function normalizeSpace(space: Space): Space {
       y: node.position.y,
     },
     data: {
-      label: node.data?.label?.trim() || 'Untitled',
+      label: node.data?.label?.trim() || fallbackNodeLabel(locale),
     },
   }));
 
@@ -131,7 +177,7 @@ function normalizeSpace(space: Space): Space {
 
   return {
     ...space,
-    name: space.name?.trim() || 'Untitled Space',
+    name: space.name?.trim() || fallbackSpaceName(locale),
     nodes: rawNodes.map((node) => ({
       ...node,
       position: {
@@ -161,14 +207,26 @@ export function normalizeSnapshot(
     return buildDefaultState();
   }
 
+  const locale = snapshot.locale === 'zh' ? 'zh' : 'en';
   const spaces = snapshot.spaces.map(normalizeSpace);
   const activeSpaceId = spaces.some((space) => space.id === snapshot.activeSpaceId)
     ? snapshot.activeSpaceId
     : spaces[0].id;
 
   return {
+    locale,
     theme: snapshot.theme === 'light' ? 'light' : 'dark',
-    spaces,
+    spaces: spaces.map((space) => ({
+      ...space,
+      name: space.name?.trim() || fallbackSpaceName(locale),
+      nodes: space.nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          label: node.data.label?.trim() || fallbackNodeLabel(locale),
+        },
+      })),
+    })),
     activeSpaceId,
     lastOpenedAt: snapshot.lastOpenedAt || nowIso(),
   };

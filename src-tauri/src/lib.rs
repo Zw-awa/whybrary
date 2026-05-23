@@ -122,6 +122,7 @@ struct Space {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct AppSnapshot {
+    locale: String,
     theme: String,
     spaces: Vec<Space>,
     active_space_id: Option<String>,
@@ -323,6 +324,7 @@ fn load_todos(connection: &Connection, space_id: &str) -> Result<Vec<TodoItem>, 
 }
 
 fn load_snapshot_from_connection(connection: &Connection) -> Result<AppSnapshot, String> {
+    let locale = load_setting(&connection, "locale")?.unwrap_or_else(|| "en".to_string());
     let theme = load_setting(&connection, "theme")?.unwrap_or_else(|| "dark".to_string());
     let active_space_id = load_setting(&connection, "activeSpaceId")?;
     let last_opened_at = load_setting(&connection, "lastOpenedAt")?.unwrap_or_default();
@@ -376,6 +378,7 @@ fn load_snapshot_from_connection(connection: &Connection) -> Result<AppSnapshot,
     }
 
     Ok(AppSnapshot {
+        locale,
         theme,
         spaces,
         active_space_id,
@@ -403,6 +406,13 @@ fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapsh
     transaction
         .execute("DELETE FROM settings", [])
         .map_err(|error| format!("Unable to clear settings: {error}"))?;
+
+    transaction
+        .execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+            params!["locale", &snapshot.locale],
+        )
+        .map_err(|error| format!("Unable to save locale setting: {error}"))?;
 
     transaction
         .execute(
@@ -528,6 +538,7 @@ fn smoke_report_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn smoke_snapshot() -> AppSnapshot {
     AppSnapshot {
+        locale: "en".to_string(),
         theme: "light".to_string(),
         active_space_id: Some("smoke-space".to_string()),
         last_opened_at: "2026-01-01T00:00:00.000Z".to_string(),
@@ -601,6 +612,7 @@ mod tests {
 
     fn make_snapshot() -> AppSnapshot {
         AppSnapshot {
+            locale: "en".to_string(),
             theme: "light".to_string(),
             active_space_id: Some("space-1".to_string()),
             last_opened_at: "2026-01-01T00:00:00.000Z".to_string(),
@@ -657,6 +669,7 @@ mod tests {
 
     fn make_replacement_snapshot() -> AppSnapshot {
         AppSnapshot {
+            locale: "zh".to_string(),
             theme: "dark".to_string(),
             active_space_id: None,
             last_opened_at: "2026-02-01T00:00:00.000Z".to_string(),
@@ -697,6 +710,7 @@ mod tests {
         assert_eq!(
             snapshot,
             AppSnapshot {
+                locale: "en".to_string(),
                 theme: "dark".to_string(),
                 spaces: vec![],
                 active_space_id: None,
