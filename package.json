@@ -1,7 +1,7 @@
 {
   "name": "whybrary",
   "private": true,
-  "version": "0.2.0-rc1",
+  "version": "0.2.1-rc1",
   "description": "A local-first personal why manager with a neuron-style graph and lightweight To-Do lists.",
   "type": "module",
   "scripts": {
