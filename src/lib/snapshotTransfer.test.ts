@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { buildDefaultState } from './defaults';
-import { buildSnapshotFilename, parseSnapshot, serializeSnapshot } from './snapshotTransfer';
+import {
+  MAX_SNAPSHOT_FILE_BYTES,
+  buildSnapshotFilename,
+  parseSnapshot,
+  serializeSnapshot,
+} from './snapshotTransfer';
 
 Object.defineProperty(window, 'matchMedia', {
   configurable: true,
@@ -44,5 +49,10 @@ describe('snapshotTransfer', () => {
     const snapshot = buildDefaultState();
     const parsed = parseSnapshot(JSON.stringify(snapshot));
     expect(parsed).toEqual(snapshot);
+  });
+
+  it('rejects oversized snapshot json', () => {
+    const oversized = 'x'.repeat(MAX_SNAPSHOT_FILE_BYTES + 1);
+    expect(() => parseSnapshot(oversized)).toThrow(/maximum supported size/i);
   });
 });

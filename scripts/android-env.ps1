@@ -15,8 +15,8 @@ Shows help text.
 
 [CmdletBinding()]
 param(
-    [Parameter(Position = 0, Mandatory = $true)]
-    [string]$Command,
+    [Parameter(Mandatory = $true, ValueFromRemainingArguments = $true)]
+    [string[]]$ArgumentList,
     [switch]$Help
 )
 
@@ -61,10 +61,19 @@ New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
 
 Write-Output 'Loaded Android user environment variables.'
 Write-Output 'Using workspace-local cache directories.'
-Write-Output "Executing command: $Command"
+if ($ArgumentList.Count -eq 0) {
+    throw 'ArgumentList must contain at least one item.'
+}
+
+$displayCommand = [string]::Join(' ', $ArgumentList)
+Write-Output "Executing command: $displayCommand"
+
+$commandName = $ArgumentList[0]
+$commandArgs = if ($ArgumentList.Count -gt 1) { $ArgumentList[1..($ArgumentList.Count - 1)] } else { @() }
 
 $global:LASTEXITCODE = 0
-Invoke-Expression $Command
+& $commandName @commandArgs
+
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }

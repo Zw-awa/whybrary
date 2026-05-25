@@ -14,6 +14,7 @@ import {
 import { clearPreviewSnapshot, loadSnapshot, saveSnapshot } from './lib/persistence';
 import { getCopy } from './lib/i18n';
 import {
+  MAX_SNAPSHOT_FILE_BYTES,
   buildSnapshotFilename,
   parseSnapshot,
   serializeSnapshot,
@@ -252,7 +253,7 @@ export default function App() {
     anchor.href = url;
     anchor.download = buildSnapshotFilename();
     anchor.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
     setBannerMessage(copy.banners.exported);
   };
 
@@ -267,6 +268,10 @@ export default function App() {
       }
 
       try {
+        if (file.size > MAX_SNAPSHOT_FILE_BYTES) {
+          throw new Error('Snapshot JSON exceeds the maximum supported size.');
+        }
+
         const raw = await file.text();
         const imported = parseSnapshot(raw);
 
@@ -741,7 +746,7 @@ export default function App() {
               <a
                 className="welcome-panel__link"
                 href="https://github.com/Zw-awa/whybrary/releases"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 target="_blank"
               >
                 {copy.welcome.releases}

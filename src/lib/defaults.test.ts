@@ -95,4 +95,48 @@ describe('defaults', () => {
 
     expect(normalized.locale).toBe('en');
   });
+
+  it('safely normalizes structurally incomplete imported spaces', () => {
+    const normalized = normalizeSnapshot({
+      locale: 'en',
+      theme: 'light',
+      activeSpaceId: 'broken-space',
+      lastOpenedAt: '',
+      spaces: [
+        {
+          id: 'broken-space',
+          name: '  ',
+          nodes: [
+            {
+              id: '',
+              position: { x: Number.NaN, y: undefined },
+              data: {},
+            },
+          ],
+          edges: [
+            {
+              id: '',
+              source: null,
+              target: 42,
+            },
+          ],
+          todos: [
+            {
+              id: '',
+              text: 99,
+              completed: 'yes',
+            },
+          ],
+          viewport: null,
+        },
+      ],
+    } as never);
+
+    expect(normalized.spaces[0].name).toBe('Untitled Space');
+    expect(normalized.spaces[0].nodes).toHaveLength(1);
+    expect(normalized.spaces[0].nodes[0].data.label).toBe('Untitled');
+    expect(normalized.spaces[0].viewport).toEqual({ x: 0, y: 0, zoom: 0.9 });
+    expect(normalized.spaces[0].todos[0].text).toBe('');
+    expect(normalized.spaces[0].todos[0].completed).toBe(true);
+  });
 });

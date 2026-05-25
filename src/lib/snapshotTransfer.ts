@@ -1,6 +1,8 @@
 import { normalizeSnapshot } from './defaults';
 import type { AppSnapshot } from '../types';
 
+export const MAX_SNAPSHOT_FILE_BYTES = 2 * 1024 * 1024;
+
 type SnapshotExportEnvelope = {
   app: 'whybrary';
   formatVersion: 1;
@@ -25,6 +27,10 @@ export function serializeSnapshot(snapshot: AppSnapshot): string {
 }
 
 export function parseSnapshot(raw: string): AppSnapshot {
+  if (raw.length > MAX_SNAPSHOT_FILE_BYTES) {
+    throw new Error('Snapshot JSON exceeds the maximum supported size.');
+  }
+
   const parsed = JSON.parse(raw) as AppSnapshot | SnapshotExportEnvelope;
   if (
     typeof parsed === 'object' &&

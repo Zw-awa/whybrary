@@ -206,7 +206,7 @@ describe('App integration', () => {
 
     expect(createObjectUrlSpy).toHaveBeenCalledOnce();
     expect(clickSpy).toHaveBeenCalledOnce();
-    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:whybrary');
+    await waitFor(() => expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:whybrary'));
     expect(screen.getByText('Snapshot exported as JSON.')).toBeTruthy();
   });
 

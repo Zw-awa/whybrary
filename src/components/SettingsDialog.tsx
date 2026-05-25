@@ -74,7 +74,7 @@ export function SettingsDialog({
                 <a
                   className="welcome-panel__link"
                   href="https://github.com/Zw-awa/whybrary"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   target="_blank"
                 >
                   {copy.settings.githubValue}

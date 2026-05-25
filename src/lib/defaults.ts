@@ -8,6 +8,13 @@ import type {
   ViewportState,
 } from '../types';
 
+const MAX_SPACES = 40;
+const MAX_NODES_PER_SPACE = 500;
+const MAX_EDGES_PER_SPACE = 1200;
+const MAX_TODOS_PER_SPACE = 500;
+const MAX_TEXT_LENGTH = 160;
+const MAX_SPACE_NAME_LENGTH = 80;
+
 function safeTheme(): ThemeMode {
   if (
     typeof window !== 'undefined' &&
@@ -72,6 +79,23 @@ export function nowIso(): string {
 
 function defaultViewport(): ViewportState {
   return { x: 0, y: 0, zoom: 0.9 };
+}
+
+function clampText(value: unknown, fallback: string, maxLength = MAX_TEXT_LENGTH): string {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  return trimmed.slice(0, maxLength);
+}
+
+function asFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
 function normalizeViewport(viewport: ViewportState | null | undefined): ViewportState {
@@ -158,15 +182,18 @@ export function buildDefaultState(locale = safeLocale()): AppSnapshot {
 }
 
 function normalizeSpace(space: Space): Space {
+  const fallback = createSpace(fallbackSpaceName('en'), 'en');
   const locale = (space as Space & { locale?: AppLocale }).locale === 'zh' ? 'zh' : 'en';
-  const rawNodes = (space.nodes ?? []).map((node) => ({
-    id: node.id,
+  const rawNodes = (Array.isArray(space.nodes) ? space.nodes : [])
+    .slice(0, MAX_NODES_PER_SPACE)
+    .map((node, index) => ({
+    id: typeof node?.id === 'string' && node.id ? node.id : `imported-node-${index + 1}`,
     position: {
-      x: node.position.x,
-      y: node.position.y,
+      x: asFiniteNumber(node?.position?.x, 220 + index * 24),
+      y: asFiniteNumber(node?.position?.y, 180 + index * 24),
     },
     data: {
-      label: node.data?.label?.trim() || fallbackNodeLabel(locale),
+      label: clampText(node.data?.label, fallbackNodeLabel(locale)),
     },
   }));
 
@@ -176,8 +203,10 @@ function normalizeSpace(space: Space): Space {
   const offsetY = minY < 80 ? 120 - minY : 0;
 
   return {
+    ...fallback,
     ...space,
-    name: space.name?.trim() || fallbackSpaceName(locale),
+    id: typeof space?.id === 'string' && space.id ? space.id : fallback.id,
+    name: clampText(space?.name, fallbackSpaceName(locale), MAX_SPACE_NAME_LENGTH),
     nodes: rawNodes.map((node) => ({
       ...node,
       position: {
@@ -185,18 +214,22 @@ function normalizeSpace(space: Space): Space {
         y: node.position.y + offsetY,
       },
     })),
-    edges: (space.edges ?? []).map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
+    edges: (Array.isArray(space.edges) ? space.edges : []).slice(0, MAX_EDGES_PER_SPACE).map((edge, index) => ({
+      id: typeof edge?.id === 'string' && edge.id ? edge.id : `imported-edge-${index + 1}`,
+      source: typeof edge?.source === 'string' ? edge.source : '',
+      target: typeof edge?.target === 'string' ? edge.target : '',
     })),
-    todos: (space.todos ?? []).map((todo) => ({
+    todos: (Array.isArray(space.todos) ? space.todos : []).slice(0, MAX_TODOS_PER_SPACE).map((todo, index) => ({
       ...todo,
-      text: todo.text ?? '',
+      id: typeof todo?.id === 'string' && todo.id ? todo.id : `imported-todo-${index + 1}`,
+      text: typeof todo.text === 'string' ? todo.text.slice(0, MAX_TEXT_LENGTH) : '',
+      completed: Boolean(todo?.completed),
+      createdAt: typeof todo?.createdAt === 'string' && todo.createdAt ? todo.createdAt : nowIso(),
+      updatedAt: typeof todo?.updatedAt === 'string' && todo.updatedAt ? todo.updatedAt : nowIso(),
     })),
     viewport: normalizeViewport(space.viewport),
-    createdAt: space.createdAt || nowIso(),
-    updatedAt: space.updatedAt || nowIso(),
+    createdAt: typeof space?.createdAt === 'string' && space.createdAt ? space.createdAt : nowIso(),
+    updatedAt: typeof space?.updatedAt === 'string' && space.updatedAt ? space.updatedAt : nowIso(),
   };
 }
 
@@ -208,7 +241,7 @@ export function normalizeSnapshot(
   }
 
   const locale = snapshot.locale === 'zh' ? 'zh' : 'en';
-  const spaces = snapshot.spaces.map(normalizeSpace);
+  const spaces = snapshot.spaces.slice(0, MAX_SPACES).map(normalizeSpace);
   const activeSpaceId = spaces.some((space) => space.id === snapshot.activeSpaceId)
     ? snapshot.activeSpaceId
     : spaces[0].id;
@@ -218,12 +251,12 @@ export function normalizeSnapshot(
     theme: snapshot.theme === 'light' ? 'light' : 'dark',
     spaces: spaces.map((space) => ({
       ...space,
-      name: space.name?.trim() || fallbackSpaceName(locale),
+      name: clampText(space.name, fallbackSpaceName(locale), MAX_SPACE_NAME_LENGTH),
       nodes: space.nodes.map((node) => ({
         ...node,
         data: {
           ...node.data,
-          label: node.data.label?.trim() || fallbackNodeLabel(locale),
+          label: clampText(node.data.label, fallbackNodeLabel(locale)),
         },
       })),
     })),
