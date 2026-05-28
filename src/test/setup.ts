@@ -63,3 +63,11 @@ vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
 });
 vi.stubGlobal('cancelAnimationFrame', () => undefined);
 vi.stubGlobal('PointerEvent', MouseEvent);
+vi.stubGlobal(
+  'ResizeObserver',
+  class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+);

@@ -28,6 +28,70 @@ export function WhyTodoPanel({
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const openTodos = useMemo(() => space.todos.filter((todo) => !todo.completed), [space.todos]);
 
+  const canScrollWithinList = () => {
+    const list = listRef.current;
+    if (!list) {
+      return false;
+    }
+
+    return list.scrollHeight > list.clientHeight + 1;
+  };
+
+  const smoothScrollElement = (element: HTMLDivElement, top: number) => {
+    try {
+      element.scrollTo({ top, behavior: 'smooth' });
+    } catch {
+      element.scrollTop = top;
+    }
+  };
+
+  const scrollItemIntoView = (item: HTMLDivElement | null) => {
+    if (!item) {
+      return;
+    }
+
+    try {
+      item.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+        inline: 'nearest',
+      });
+    } catch {
+      item.scrollIntoView(true);
+    }
+  };
+
+  const getVisibleTop = () => {
+    const list = listRef.current;
+    if (!list) {
+      return 18;
+    }
+
+    return Math.max(list.getBoundingClientRect().top, 0) + 18;
+  };
+
+  const scrollListToTop = () => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+
+    if (canScrollWithinList()) {
+      smoothScrollElement(list, 0);
+      return;
+    }
+
+    try {
+      list.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+        inline: 'nearest',
+      });
+    } catch {
+      list.scrollIntoView(true);
+    }
+  };
+
   const submitDraft = () => {
     const nextText = draft.trim();
     if (!nextText) {
@@ -37,25 +101,17 @@ export function WhyTodoPanel({
     onAddTodo(nextText);
     setDraft('');
     requestAnimationFrame(() => {
-      listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollListToTop();
     });
   };
 
   const scrollToTop = () => {
-    listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollListToTop();
   };
 
   const scrollToTodo = (todoId: string) => {
-    const list = listRef.current;
     const item = itemRefs.current[todoId];
-    if (!list || !item) {
-      return;
-    }
-
-    list.scrollTo({
-      top: Math.max(0, item.offsetTop - 14),
-      behavior: 'smooth',
-    });
+    scrollItemIntoView(item);
   };
 
   const scrollToFirstOpen = () => {
@@ -66,14 +122,14 @@ export function WhyTodoPanel({
   };
 
   const scrollToNextOpen = () => {
-    const list = listRef.current;
-    if (!list || openTodos.length === 0) {
+    if (openTodos.length === 0) {
       return;
     }
 
+    const visibleTop = getVisibleTop();
     const target = openTodos.find((todo) => {
       const element = itemRefs.current[todo.id];
-      return element ? element.offsetTop > list.scrollTop + 18 : false;
+      return element ? element.getBoundingClientRect().top > visibleTop : false;
     });
 
     scrollToTodo(target?.id ?? openTodos[0].id);
