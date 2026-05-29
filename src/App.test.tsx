@@ -287,7 +287,9 @@ describe('App integration', () => {
   });
 
   it('does not auto-open the tutorial for older saved snapshots that lack the new flag', async () => {
-    const { hasSeenTutorial: _hasSeenTutorial, ...legacySnapshot } = makeSnapshot();
+    const legacySnapshot = Object.fromEntries(
+      Object.entries(makeSnapshot()).filter(([key]) => key !== 'hasSeenTutorial'),
+    );
     loadSnapshotMock.mockResolvedValue(legacySnapshot as never);
 
     render(<App />);
