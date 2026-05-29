@@ -127,6 +127,7 @@ struct AppSnapshot {
     spaces: Vec<Space>,
     active_space_id: Option<String>,
     last_opened_at: String,
+    has_seen_tutorial: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -383,6 +384,9 @@ fn load_snapshot_from_connection(connection: &Connection) -> Result<AppSnapshot,
         spaces,
         active_space_id,
         last_opened_at,
+        has_seen_tutorial: load_setting(&connection, "hasSeenTutorial")?
+            .map(|value| value == "true")
+            .unwrap_or(true),
     })
 }
 
@@ -436,6 +440,16 @@ fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapsh
             params!["lastOpenedAt", &snapshot.last_opened_at],
         )
         .map_err(|error| format!("Unable to save last opened setting: {error}"))?;
+
+    transaction
+        .execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+            params![
+                "hasSeenTutorial",
+                if snapshot.has_seen_tutorial { "true" } else { "false" }
+            ],
+        )
+        .map_err(|error| format!("Unable to save tutorial setting: {error}"))?;
 
     for (space_index, space) in snapshot.spaces.iter().enumerate() {
         transaction
@@ -542,6 +556,7 @@ fn smoke_snapshot() -> AppSnapshot {
         theme: "light".to_string(),
         active_space_id: Some("smoke-space".to_string()),
         last_opened_at: "2026-01-01T00:00:00.000Z".to_string(),
+        has_seen_tutorial: true,
         spaces: vec![Space {
             id: "smoke-space".to_string(),
             name: "Smoke Space".to_string(),
@@ -616,6 +631,7 @@ mod tests {
             theme: "light".to_string(),
             active_space_id: Some("space-1".to_string()),
             last_opened_at: "2026-01-01T00:00:00.000Z".to_string(),
+            has_seen_tutorial: true,
             spaces: vec![Space {
                 id: "space-1".to_string(),
                 name: "Space One".to_string(),
@@ -673,6 +689,7 @@ mod tests {
             theme: "dark".to_string(),
             active_space_id: None,
             last_opened_at: "2026-02-01T00:00:00.000Z".to_string(),
+            has_seen_tutorial: false,
             spaces: vec![Space {
                 id: "space-2".to_string(),
                 name: "Space Two".to_string(),
@@ -715,6 +732,7 @@ mod tests {
                 spaces: vec![],
                 active_space_id: None,
                 last_opened_at: String::new(),
+                has_seen_tutorial: true,
             }
         );
     }
@@ -784,6 +802,18 @@ mod tests {
             load_schema_version(&connection).expect("load schema version"),
             LATEST_SCHEMA_VERSION
         );
+    }
+
+    #[test]
+    fn save_persists_tutorial_seen_setting() {
+        let mut connection = open_test_connection();
+        let mut snapshot = make_snapshot();
+        snapshot.has_seen_tutorial = false;
+
+        save_snapshot_to_connection(&mut connection, &snapshot).expect("save snapshot");
+
+        let value = load_setting(&connection, "hasSeenTutorial").expect("load tutorial setting");
+        assert_eq!(value.as_deref(), Some("false"));
     }
 
     #[test]

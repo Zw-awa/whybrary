@@ -178,6 +178,7 @@ export function buildDefaultState(locale = safeLocale()): AppSnapshot {
     spaces: [firstSpace],
     activeSpaceId: firstSpace.id,
     lastOpenedAt: nowIso(),
+    hasSeenTutorial: false,
   };
 }
 
@@ -262,5 +263,7 @@ export function normalizeSnapshot(
     })),
     activeSpaceId,
     lastOpenedAt: snapshot.lastOpenedAt || nowIso(),
+    hasSeenTutorial:
+      typeof snapshot.hasSeenTutorial === 'boolean' ? snapshot.hasSeenTutorial : true,
   };
 }

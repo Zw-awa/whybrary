@@ -2,6 +2,21 @@ import '../test/setup';
 import { describe, expect, it } from 'vitest';
 import { createNeuronNode, createSpace, normalizeSnapshot } from './defaults';
 
+Object.defineProperty(window, 'matchMedia', {
+  configurable: true,
+  writable: true,
+  value: () => ({
+    matches: false,
+    media: '(prefers-color-scheme: dark)',
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }),
+});
+
 describe('defaults', () => {
   it('creates nodes and edges without legacy type fields', () => {
     const node = createNeuronNode('Why', 120, 160);
@@ -94,6 +109,35 @@ describe('defaults', () => {
     } as never);
 
     expect(normalized.locale).toBe('en');
+  });
+
+  it('marks brand-new default state as not having seen the tutorial', () => {
+    const snapshot = normalizeSnapshot(undefined);
+
+    expect(snapshot.hasSeenTutorial).toBe(false);
+  });
+
+  it('treats older snapshots without tutorial state as already seen', () => {
+    const normalized = normalizeSnapshot({
+      locale: 'en',
+      theme: 'light',
+      activeSpaceId: 'space-1',
+      lastOpenedAt: '2026-01-01T00:00:00.000Z',
+      spaces: [
+        {
+          id: 'space-1',
+          name: 'Legacy Space',
+          nodes: [],
+          edges: [],
+          todos: [],
+          viewport: { x: 0, y: 0, zoom: 1 },
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    } as never);
+
+    expect(normalized.hasSeenTutorial).toBe(true);
   });
 
   it('safely normalizes structurally incomplete imported spaces', () => {

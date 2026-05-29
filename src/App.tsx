@@ -81,7 +81,7 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState<'booting' | 'saving' | 'saved' | 'error'>('booting');
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [isMapEditing, setIsMapEditing] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<DeviceLayoutMode>(() =>
     typeof window === 'undefined' ? 'desktop' : getLayoutMode(window.innerWidth),
@@ -90,7 +90,6 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [dialogState, setDialogState] = useState<AppDialogState>(null);
-  const webPreview = isWebPreview();
   const isMobile = layoutMode === 'phone';
   const copy = getCopy(snapshot.locale);
 
@@ -138,11 +137,12 @@ export default function App() {
           return;
         }
 
+        const normalized = normalizeSnapshot(loaded);
         startTransition(() => {
-          setSnapshot(normalizeSnapshot(loaded));
+          setSnapshot(normalized);
           setHydrated(true);
           setSaveStatus('saved');
-          setShowWelcome(webPreview);
+          setShowTutorial(!normalized.hasSeenTutorial);
         });
       })
       .catch(() => {
@@ -150,19 +150,19 @@ export default function App() {
           return;
         }
 
+        const fallback = buildDefaultState();
         startTransition(() => {
-          const fallback = buildDefaultState();
           setSnapshot(fallback);
           setHydrated(true);
           setSaveStatus('error');
-          setShowWelcome(webPreview);
+          setShowTutorial(!fallback.hasSeenTutorial);
         });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [webPreview]);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = snapshot.theme;
@@ -221,6 +221,29 @@ export default function App() {
     setDialogState(null);
   };
 
+  const markTutorialSeen = () => {
+    setSnapshot((current) =>
+      current.hasSeenTutorial
+        ? current
+        : {
+            ...current,
+            hasSeenTutorial: true,
+            lastOpenedAt: nowIso(),
+          },
+    );
+  };
+
+  const openTutorial = () => {
+    setShowTutorial(true);
+    setIsSettingsOpen(false);
+    setIsSidebarOpen(false);
+  };
+
+  const closeTutorial = () => {
+    setShowTutorial(false);
+    markTutorialSeen();
+  };
+
   const showNotice = (title: string, message: string) => {
     setDialogState({
       confirmLabel: copy.dialogs.close,
@@ -246,7 +269,7 @@ export default function App() {
   };
 
   const handleExportSnapshot = () => {
-    setShowWelcome(false);
+    setShowTutorial(false);
     const blob = new Blob([serializeSnapshot(snapshot)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -278,7 +301,7 @@ export default function App() {
         startTransition(() => {
           setEditingNodeId(null);
           setIsMapEditing(false);
-          setShowWelcome(false);
+          setShowTutorial(false);
           setSnapshot({
             ...imported,
             lastOpenedAt: nowIso(),
@@ -306,7 +329,7 @@ export default function App() {
         clearPreviewSnapshot();
         setEditingNodeId(null);
         setIsMapEditing(false);
-        setShowWelcome(webPreview);
+        setShowTutorial(!fallback.hasSeenTutorial);
         setSnapshot(fallback);
         setHydrated(true);
         setSaveStatus('saved');
@@ -336,7 +359,8 @@ export default function App() {
   const handleCreateSpace = () => {
     setIsMapEditing(false);
     setEditingNodeId(null);
-    setShowWelcome(false);
+    setShowTutorial(false);
+    markTutorialSeen();
     updateSnapshot((current) => {
       const nextSpace = createSpace(
         current.locale === 'zh' ? `空间 ${current.spaces.length + 1}` : `Space ${current.spaces.length + 1}`,
@@ -655,7 +679,7 @@ export default function App() {
                   {copy.workspace.openTasks(activeSpace.todos.filter((todo) => !todo.completed).length)}
                 </span>
               </p>
-              {webPreview ? (
+              {isWebPreview() ? (
                 <p className="workspace__subhead">{copy.workspace.webPreviewSubhead}</p>
               ) : null}
             </div>
@@ -709,7 +733,7 @@ export default function App() {
           ) : null}
         </div>
 
-        {showWelcome ? (
+        {showTutorial ? (
           <section className="welcome-panel" role="region" aria-label={copy.welcome.regionLabel}>
             <div className="welcome-panel__card">
               <p className="eyebrow">{copy.welcome.eyebrow}</p>
@@ -717,8 +741,11 @@ export default function App() {
               <p>{copy.welcome.body}</p>
 
               <div className="welcome-panel__actions">
-                <button className="button button--accent" onClick={() => setShowWelcome(false)} type="button">
+                <button className="button button--accent" onClick={closeTutorial} type="button">
                   {copy.welcome.startEditing}
+                </button>
+                <button className="button" onClick={closeTutorial} type="button">
+                  {copy.welcome.close}
                 </button>
                 <button className="button" onClick={handleImportSnapshot} type="button">
                   {copy.welcome.importJson}
@@ -730,27 +757,18 @@ export default function App() {
 
               <div className="welcome-panel__notes">
                 <div className="welcome-note">
-                  <strong>{copy.welcome.fastTitle}</strong>
-                  <span>{copy.welcome.fastBody}</span>
+                  <strong>{copy.welcome.stepMapTitle}</strong>
+                  <span>{copy.welcome.stepMapBody}</span>
                 </div>
                 <div className="welcome-note">
-                  <strong>{copy.welcome.portableTitle}</strong>
-                  <span>{copy.welcome.portableBody}</span>
+                  <strong>{copy.welcome.stepTodoTitle}</strong>
+                  <span>{copy.welcome.stepTodoBody}</span>
                 </div>
                 <div className="welcome-note">
-                  <strong>{copy.welcome.signingTitle}</strong>
-                  <span>{copy.welcome.signingBody}</span>
+                  <strong>{copy.welcome.stepSpacesTitle}</strong>
+                  <span>{copy.welcome.stepSpacesBody}</span>
                 </div>
               </div>
-
-              <a
-                className="welcome-panel__link"
-                href="https://github.com/Zw-awa/whybrary/releases"
-                rel="noopener noreferrer"
-                target="_blank"
-              >
-                {copy.welcome.releases}
-              </a>
             </div>
           </section>
         ) : null}
@@ -797,6 +815,7 @@ export default function App() {
           locale={snapshot.locale}
           onClose={() => setIsSettingsOpen(false)}
           onLocaleChange={handleLocaleChange}
+          onOpenTutorial={openTutorial}
         />
       ) : null}
 

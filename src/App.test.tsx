@@ -42,6 +42,7 @@ function makeSnapshot(): AppSnapshot {
     theme: 'dark',
     activeSpaceId: 'space-1',
     lastOpenedAt: '2026-01-01T00:00:00.000Z',
+    hasSeenTutorial: false,
     spaces: [
       {
         id: 'space-1',
@@ -129,7 +130,7 @@ describe('App integration', () => {
     expect(await screen.findByRole('heading', { name: 'Loaded Space' })).toBeTruthy();
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
     expect(screen.getByRole('button', { name: 'Use Light Theme' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Whybrary web welcome' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Whybrary quick tutorial' })).toBeTruthy();
   });
 
   it('opens settings and switches the interface language to chinese', async () => {
@@ -143,6 +144,7 @@ describe('App integration', () => {
 
     expect(screen.getByRole('button', { name: '设置' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '切换为浅色主题' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开教程' })).toBeTruthy();
   });
 
   it('switches to mobile navigation and opens the spaces sheet on narrow screens', async () => {
@@ -262,13 +264,37 @@ describe('App integration', () => {
     expect(screen.getByText('Snapshot imported successfully.')).toBeTruthy();
   });
 
-  it('dismisses the web welcome panel when editing starts', async () => {
+  it('dismisses the tutorial when editing starts', async () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });
 
-    expect(screen.getByRole('region', { name: 'Whybrary web welcome' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Whybrary quick tutorial' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Start Editing' }));
-    expect(screen.queryByRole('region', { name: 'Whybrary web welcome' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Whybrary quick tutorial' })).toBeNull();
+  });
+
+  it('opens the tutorial again from settings after it has been closed', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('region', { name: 'Whybrary quick tutorial' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Tutorial' }));
+
+    expect(screen.getByRole('region', { name: 'Whybrary quick tutorial' })).toBeTruthy();
+  });
+
+  it('does not auto-open the tutorial for older saved snapshots that lack the new flag', async () => {
+    const legacySnapshot = makeSnapshot() as AppSnapshot & { hasSeenTutorial?: boolean };
+    delete legacySnapshot.hasSeenTutorial;
+    loadSnapshotMock.mockResolvedValue(legacySnapshot);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+
+    expect(screen.queryByRole('region', { name: 'Whybrary quick tutorial' })).toBeNull();
   });
 
   it('resets browser-local preview data to a fresh default state', async () => {

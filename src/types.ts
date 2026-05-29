@@ -57,4 +57,5 @@ export type AppSnapshot = {
   spaces: Space[];
   activeSpaceId: string | null;
   lastOpenedAt: string;
+  hasSeenTutorial: boolean;
 };

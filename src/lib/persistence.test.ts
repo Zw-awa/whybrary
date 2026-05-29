@@ -10,6 +10,7 @@ const defaultSnapshot: AppSnapshot = {
   theme: 'dark',
   activeSpaceId: 'default-space',
   lastOpenedAt: '2026-01-01T00:00:00.000Z',
+  hasSeenTutorial: true,
   spaces: [
     {
       id: 'default-space',
@@ -39,6 +40,7 @@ const previewSnapshot: AppSnapshot = {
   theme: 'light',
   activeSpaceId: 'preview-space',
   lastOpenedAt: '2026-02-02T00:00:00.000Z',
+  hasSeenTutorial: false,
   spaces: [
     {
       id: 'preview-space',

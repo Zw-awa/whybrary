@@ -5,12 +5,14 @@ type SettingsDialogProps = {
   locale: AppLocale;
   onClose: () => void;
   onLocaleChange: (nextLocale: AppLocale) => void;
+  onOpenTutorial: () => void;
 };
 
 export function SettingsDialog({
   locale,
   onClose,
   onLocaleChange,
+  onOpenTutorial,
 }: SettingsDialogProps) {
   const copy = getCopy(locale);
 
@@ -56,6 +58,17 @@ export function SettingsDialog({
                 {copy.settings.languageChinese}
               </button>
             </div>
+          </section>
+
+          <section className="settings-card__section">
+            <div>
+              <strong>{copy.settings.tutorialTitle}</strong>
+              <p>{copy.settings.tutorialBody}</p>
+            </div>
+
+            <button className="button" onClick={onOpenTutorial} type="button">
+              {copy.settings.tutorialButton}
+            </button>
           </section>
 
           <section className="settings-card__section">

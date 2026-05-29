@@ -115,19 +115,22 @@ type AppCopy = {
     title: string;
     body: string;
     startEditing: string;
+    close: string;
     importJson: string;
     exportJson: string;
-    fastTitle: string;
-    fastBody: string;
-    portableTitle: string;
-    portableBody: string;
-    signingTitle: string;
-    signingBody: string;
-    releases: string;
+    stepMapTitle: string;
+    stepMapBody: string;
+    stepTodoTitle: string;
+    stepTodoBody: string;
+    stepSpacesTitle: string;
+    stepSpacesBody: string;
   };
   settings: {
     title: string;
     button: string;
+    tutorialTitle: string;
+    tutorialBody: string;
+    tutorialButton: string;
     languageTitle: string;
     languageBody: string;
     languageEnglish: string;
@@ -260,24 +263,27 @@ const copy: Record<AppLocale, AppCopy> = {
       untitledNode: (index) => `Untitled ${index}`,
     },
     welcome: {
-      regionLabel: 'Whybrary web welcome',
-      eyebrow: 'Whybrary on the web',
-      title: 'Try it in the browser, then carry your graph with you.',
-      body: 'This Pages version is meant for quick use, easy sharing, and JSON import/export. Nothing is uploaded. Your preview data stays in this browser unless you export it.',
+      regionLabel: 'Whybrary quick tutorial',
+      eyebrow: 'Quick tutorial',
+      title: 'See the whole app in under a minute.',
+      body: 'Whybrary keeps one small mind map and one small to-do list side by side so your reasons and next actions stay visible together.',
       startEditing: 'Start Editing',
+      close: 'Close',
       importJson: 'Import Existing JSON',
       exportJson: 'Export Current JSON',
-      fastTitle: 'Fast to try',
-      fastBody: 'Open the page and start editing immediately with no install step.',
-      portableTitle: 'Portable content',
-      portableBody: 'Export one JSON file and re-import it later on the web or desktop app.',
-      signingTitle: 'Signing deferred',
-      signingBody: 'Desktop signing stays intentionally deferred until broader distribution requires it.',
-      releases: 'Open desktop releases',
+      stepMapTitle: 'Map',
+      stepMapBody: 'Add short nodes, drag them, and connect related reasons so the structure stays easy to scan.',
+      stepTodoTitle: 'To-Do',
+      stepTodoBody: 'Keep only short next actions. Open tasks stay beside the map so ideas turn into visible steps.',
+      stepSpacesTitle: 'Spaces',
+      stepSpacesBody: 'Use spaces to separate different topics. You can switch them from the sidebar or the mobile spaces sheet.',
     },
     settings: {
       title: 'Settings',
       button: 'Settings',
+      tutorialTitle: 'Tutorial',
+      tutorialBody: 'Open the quick tutorial again if you want a fast reminder of the main workflow.',
+      tutorialButton: 'Open Tutorial',
       languageTitle: 'Language',
       languageBody: 'Choose the display language used across the app interface.',
       languageEnglish: 'English',
@@ -408,24 +414,27 @@ const copy: Record<AppLocale, AppCopy> = {
       untitledNode: (index) => `未命名 ${index}`,
     },
     welcome: {
-      regionLabel: 'Whybrary 网页欢迎面板',
-      eyebrow: 'Whybrary 网页版',
-      title: '先在浏览器里试用，再把你的脑图随身带走。',
-      body: '这个 Pages 版本用于快速试用、便捷分享，以及 JSON 导入导出。不会上传任何内容。除非你主动导出，否则预览数据只保留在当前浏览器中。',
+      regionLabel: 'Whybrary 快速教程',
+      eyebrow: '快速教程',
+      title: '不到一分钟，看完整个应用怎么用。',
+      body: 'Whybrary 把一个小型脑图和一个小型待办并排放在一起，让你的原因和下一步行动始终同时可见。',
       startEditing: '开始编辑',
+      close: '关闭',
       importJson: '导入已有 JSON',
       exportJson: '导出当前 JSON',
-      fastTitle: '即开即用',
-      fastBody: '打开页面即可开始编辑，不需要安装。',
-      portableTitle: '内容可迁移',
-      portableBody: '导出一个 JSON 文件，之后可以在网页或桌面版重新导入。',
-      signingTitle: '暂不签名',
-      signingBody: '桌面版签名会继续保持延后，直到更广泛分发时再处理。',
-      releases: '打开桌面版发布页',
+      stepMapTitle: '脑图',
+      stepMapBody: '添加简短节点、拖动位置，再把相关原因连起来，让结构始终一眼能看懂。',
+      stepTodoTitle: '待办',
+      stepTodoBody: '只保留简短的下一步行动。未完成事项会一直和脑图放在一起，方便把想法变成动作。',
+      stepSpacesTitle: '空间',
+      stepSpacesBody: '用空间分开不同主题。你可以在侧边栏或移动端空间面板里切换它们。',
     },
     settings: {
       title: '设置',
       button: '设置',
+      tutorialTitle: '教程',
+      tutorialBody: '如果你想快速回顾主要操作，可以随时重新打开这份简短教程。',
+      tutorialButton: '打开教程',
       languageTitle: '语言',
       languageBody: '选择整个应用界面使用的显示语言。',
       languageEnglish: 'English',

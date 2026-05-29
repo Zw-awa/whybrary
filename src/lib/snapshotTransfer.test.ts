@@ -42,6 +42,7 @@ describe('snapshotTransfer', () => {
     expect(envelope.app).toBe('whybrary');
     expect(envelope.formatVersion).toBe(1);
     expect(typeof envelope.exportedAt).toBe('string');
+    expect((envelope.snapshot as AppSnapshot).hasSeenTutorial).toBe(false);
     expect(parsed).toEqual(snapshot);
   });
 
