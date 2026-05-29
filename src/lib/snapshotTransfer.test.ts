@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildDefaultState } from './defaults';
+import type { AppSnapshot } from '../types';
 import {
   MAX_SNAPSHOT_FILE_BYTES,
   buildSnapshotFilename,

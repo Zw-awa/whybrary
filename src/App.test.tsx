@@ -287,9 +287,8 @@ describe('App integration', () => {
   });
 
   it('does not auto-open the tutorial for older saved snapshots that lack the new flag', async () => {
-    const legacySnapshot = makeSnapshot() as AppSnapshot & { hasSeenTutorial?: boolean };
-    delete legacySnapshot.hasSeenTutorial;
-    loadSnapshotMock.mockResolvedValue(legacySnapshot);
+    const { hasSeenTutorial: _hasSeenTutorial, ...legacySnapshot } = makeSnapshot();
+    loadSnapshotMock.mockResolvedValue(legacySnapshot as never);
 
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });

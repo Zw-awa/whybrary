@@ -84,7 +84,7 @@ describe('defaults', () => {
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
       ],
-    });
+    } as never);
 
     expect(normalized.spaces[0].viewport).toEqual({ x: 0, y: 0, zoom: 0.9 });
   });
