@@ -925,3 +925,5 @@ pub fn run() {
         .run(context)
         .expect("error while running Whybrary");
 }
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

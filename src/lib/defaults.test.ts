@@ -184,3 +184,5 @@ describe('defaults', () => {
     expect(normalized.spaces[0].todos[0].completed).toBe(true);
   });
 });
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

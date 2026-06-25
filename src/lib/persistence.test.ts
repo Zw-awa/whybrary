@@ -127,3 +127,5 @@ describe('persistence', () => {
     expect(window.localStorage.getItem('whybrary.preview.snapshot')).toBeNull();
   });
 });
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

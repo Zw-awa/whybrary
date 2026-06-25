@@ -146,3 +146,5 @@ describe('WhyTodoPanel dock actions', () => {
     });
   });
 });
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

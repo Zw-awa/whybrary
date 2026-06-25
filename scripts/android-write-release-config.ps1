@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Zw-awa
+# SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
 Writes a production-safe tauri.conf.json into the generated Android assets directory.

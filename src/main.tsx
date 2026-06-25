@@ -8,3 +8,5 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <App />
   </React.StrictMode>,
 );
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

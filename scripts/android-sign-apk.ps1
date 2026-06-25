@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Zw-awa
+# SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
 Signs a Whybrary Android APK with zipalign and apksigner.

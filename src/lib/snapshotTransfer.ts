@@ -44,3 +44,5 @@ export function parseSnapshot(raw: string): AppSnapshot {
 
   return normalizeSnapshot(parsed as AppSnapshot);
 }
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

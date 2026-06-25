@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Zw-awa
+# SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
 Loads stable Android environment variables for Whybrary commands.

@@ -33,3 +33,5 @@ export function BrainEdgeLayer({ edges, nodeById, viewport }: BrainEdgeLayerProp
     </svg>
   );
 }
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

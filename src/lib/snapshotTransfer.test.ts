@@ -58,3 +58,5 @@ describe('snapshotTransfer', () => {
     expect(() => parseSnapshot(oversized)).toThrow(/maximum supported size/i);
   });
 });
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

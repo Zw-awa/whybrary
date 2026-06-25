@@ -197,3 +197,5 @@ export function useBrainSelection({
     toggleMultiSelect,
   };
 }
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

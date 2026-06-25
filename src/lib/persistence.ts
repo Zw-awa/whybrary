@@ -41,3 +41,5 @@ export async function saveSnapshot(snapshot: AppSnapshot): Promise<void> {
 export function clearPreviewSnapshot(): void {
   window.localStorage.removeItem(LOCAL_PREVIEW_KEY);
 }
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

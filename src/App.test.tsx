@@ -360,3 +360,5 @@ describe('App integration', () => {
     expect(activeSpace?.edges).toEqual([]);
   });
 });
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

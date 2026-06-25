@@ -459,3 +459,5 @@ const copy: Record<AppLocale, AppCopy> = {
 export function getCopy(locale: AppLocale): AppCopy {
   return copy[locale] ?? copy.en;
 }
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

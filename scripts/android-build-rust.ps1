@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Zw-awa
+# SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
 Builds the Rust Android shared library for a target ABI and copies it into jniLibs.

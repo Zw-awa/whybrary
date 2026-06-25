@@ -139,3 +139,5 @@ export function findSpawnPosition(
 
   return { x: centerX + 160, y: centerY + 64 };
 }
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

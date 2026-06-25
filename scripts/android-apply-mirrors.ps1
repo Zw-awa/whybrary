@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Zw-awa
+# SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
 Applies stable Android mirror and generated-project patches.

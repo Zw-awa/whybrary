@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 

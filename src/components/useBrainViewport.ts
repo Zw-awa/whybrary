@@ -155,3 +155,5 @@ export function useBrainViewport({
     trackedNodeId,
   };
 }
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT

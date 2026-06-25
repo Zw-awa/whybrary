@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';

@@ -267,3 +267,5 @@ export function normalizeSnapshot(
       typeof snapshot.hasSeenTutorial === 'boolean' ? snapshot.hasSeenTutorial : true,
   };
 }
+// SPDX-FileCopyrightText: 2026 Zw-awa
+// SPDX-License-Identifier: MIT
