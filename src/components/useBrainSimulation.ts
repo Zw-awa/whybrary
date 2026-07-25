@@ -174,8 +174,10 @@ export function useBrainSimulation({
         driftingNodes += 1;
       }
 
-      const driftVx = driftingNodes > 0 ? totalVx / driftingNodes : 0;
-      const driftVy = driftingNodes > 0 ? totalVy / driftingNodes : 0;
+      // During a drag, the shared velocity is the connected graph following the pointer.
+      // Only cancel that drift while the graph is settling on its own.
+      const driftVx = !draggedNodeId && driftingNodes > 0 ? totalVx / driftingNodes : 0;
+      const driftVy = !draggedNodeId && driftingNodes > 0 ? totalVy / driftingNodes : 0;
 
       for (const node of next) {
         if (node.id === draggedNodeId) {

@@ -45,22 +45,25 @@ export function useBrainDrag({
     }
 
     const handleMove = (event: PointerEvent) => {
+      const currentDrag = dragStateRef.current;
       const shell = shellRef.current;
-      if (!shell) {
+      if (!shell || !currentDrag) {
         return;
       }
 
       const rect = shell.getBoundingClientRect();
-      const nextX = (event.clientX - rect.left - space.viewport.x) / space.viewport.zoom;
-      const nextY = (event.clientY - rect.top - space.viewport.y) / space.viewport.zoom;
-      const dx = event.clientX - dragState.startX;
-      const dy = event.clientY - dragState.startY;
+      const nextX = (event.clientX - rect.left - effectiveViewport.x) / effectiveViewport.zoom;
+      const nextY = (event.clientY - rect.top - effectiveViewport.y) / effectiveViewport.zoom;
+      const dx = event.clientX - currentDrag.startX;
+      const dy = event.clientY - currentDrag.startY;
       const shouldStartDrag =
-        dragState.started || Math.sqrt(dx * dx + dy * dy) >= DRAG_START_DISTANCE;
+        currentDrag.started || Math.sqrt(dx * dx + dy * dy) >= DRAG_START_DISTANCE;
 
-      if (!dragState.started && shouldStartDrag) {
-        setDragState((current) => (current ? { ...current, started: true } : current));
-        onSelectNode(dragState.nodeId);
+      if (!currentDrag.started && shouldStartDrag) {
+        const startedDrag = { ...currentDrag, started: true };
+        dragStateRef.current = startedDrag;
+        setDragState(startedDrag);
+        onSelectNode(currentDrag.nodeId);
         suppressClickRef.current = true;
       }
 
@@ -72,7 +75,8 @@ export function useBrainDrag({
     };
 
     const handleEnd = () => {
-      const wasDragging = dragState.started;
+      const wasDragging = dragStateRef.current?.started ?? false;
+      dragStateRef.current = null;
       setDragState(null);
       dragPointerRef.current = null;
 
@@ -113,7 +117,7 @@ export function useBrainDrag({
       window.removeEventListener('pointerup', handleEnd);
       window.removeEventListener('pointercancel', handleEnd);
     };
-  }, [dragState, onPersistNodePositions, onSelectNode, shellRef, simNodesRef, space]);
+  }, [dragState, effectiveViewport, onPersistNodePositions, onSelectNode, shellRef, simNodesRef, space]);
 
   useEffect(() => {
     return () => {
@@ -133,6 +137,10 @@ export function useBrainDrag({
   };
 
   const handleNodePointerDown = (event: ReactPointerEvent<HTMLDivElement>, nodeId: string) => {
+    if (event.isPrimary === false || (event.button !== undefined && event.button !== 0)) {
+      return;
+    }
+
     onSelectNode(nodeId);
     const shell = shellRef.current;
     if (!shell) {
@@ -144,12 +152,15 @@ export function useBrainDrag({
       x: (event.clientX - shellRect.left - effectiveViewport.x) / effectiveViewport.zoom,
       y: (event.clientY - shellRect.top - effectiveViewport.y) / effectiveViewport.zoom,
     };
-    setDragState({
+    const nextDragState = {
       nodeId,
       startX: event.clientX,
       startY: event.clientY,
       started: false,
-    });
+    };
+    dragStateRef.current = nextDragState;
+    setDragState(nextDragState);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
   return {

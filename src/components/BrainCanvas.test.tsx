@@ -335,6 +335,48 @@ describe('BrainCanvas interactions', () => {
     expect(alphaNode?.position.y).toBeCloseTo(220);
   });
 
+  it('recognizes a drag when pointerup immediately follows the threshold move', () => {
+    vi.useFakeTimers();
+    const { onPersistNodePositions } = renderCanvas();
+    const alpha = screen
+      .getAllByRole('button', { name: /Alpha|Beta/ })
+      .find((node) => node.className.includes('mind-node__label') && node.textContent === 'Alpha') as HTMLElement;
+    const nodeContainer = alpha.closest('.mind-node') as HTMLElement;
+
+    fireEvent.pointerDown(nodeContainer, { button: 0, clientX: 100, clientY: 120, isPrimary: true });
+    fireEvent.pointerMove(window, { clientX: 180, clientY: 220 });
+    fireEvent.pointerUp(window, { clientX: 180, clientY: 220 });
+    act(() => {
+      vi.advanceTimersByTime(220);
+    });
+
+    expect(onPersistNodePositions).toHaveBeenCalledTimes(1);
+  });
+
+  it('pulls connected nodes while a node is being dragged', () => {
+    renderCanvas();
+    const labels = screen
+      .getAllByRole('button', { name: /Alpha|Beta/ })
+      .filter((node) => node.className.includes('mind-node__label'));
+    const alpha = labels.find((node) => node.textContent === 'Alpha') as HTMLElement;
+    const beta = labels.find((node) => node.textContent === 'Beta') as HTMLElement;
+    const alphaContainer = alpha.closest('.mind-node') as HTMLElement;
+    const betaContainer = beta.closest('.mind-node') as HTMLElement;
+    const initialBetaLeft = Number.parseFloat(betaContainer.style.left);
+
+    flushAnimationFrame();
+    fireEvent.pointerDown(alphaContainer, { clientX: 100, clientY: 120 });
+    fireEvent.pointerMove(window, { clientX: -200, clientY: 120 });
+    flushAnimationFrame(5);
+
+    const movedBeta = screen
+      .getAllByRole('button', { name: 'Beta' })
+      .find((node) => node.className.includes('mind-node__label')) as HTMLElement;
+    const movedBetaContainer = movedBeta.closest('.mind-node') as HTMLElement;
+    expect(Number.parseFloat(movedBetaContainer.style.left)).not.toBe(initialBetaLeft);
+    fireEvent.pointerUp(window, { clientX: -200, clientY: 120 });
+  });
+
   it('does not persist node positions when the pointer movement stays below drag threshold', () => {
     vi.useFakeTimers();
     const { onPersistNodePositions } = renderCanvas();
