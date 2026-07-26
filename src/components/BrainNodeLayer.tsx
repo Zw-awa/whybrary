@@ -71,6 +71,7 @@ export function BrainNodeLayer({
         return (
           <div
             className={`mind-node ${selectedNodeId === node.id ? 'is-selected' : ''}`}
+            data-tour-id="node"
             key={node.id}
             onPointerDown={(event) => onNodePointerDown(event, node.id)}
             style={{

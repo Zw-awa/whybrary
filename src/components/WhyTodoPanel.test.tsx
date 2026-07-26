@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WhyTodoPanel } from './WhyTodoPanel';
 import type { Space } from '../types';
 
@@ -54,6 +54,114 @@ function renderPanel(overrides?: Partial<React.ComponentProps<typeof WhyTodoPane
 }
 
 describe('WhyTodoPanel dock actions', () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it('groups the todo input and add button into one tutorial target', () => {
+    renderPanel();
+    const target = document.querySelector('[data-tour-id="todo-add"]') as HTMLElement;
+
+    expect(target.tagName).toBe('FORM');
+    expect(target.querySelector('input')).toBeTruthy();
+    expect(target.querySelector('button')).toBeTruthy();
+  });
+
+  it('minimizes and restores the floating action dock', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: '收起快捷操作' }));
+    expect(screen.queryByRole('button', { name: '顶部' })).toBeNull();
+    expect(document.querySelector('.floating-actions')?.className).toContain('is-edge-right');
+
+    await user.click(document.querySelector('.floating-actions') as HTMLDivElement);
+    expect(screen.getByRole('button', { name: '顶部' })).toBeTruthy();
+    expect(document.querySelector('.floating-actions')?.className).not.toContain('is-edge-peek');
+  });
+
+  it('repositions a right-edge dock inside the viewport before expanding it', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    const dock = document.querySelector('.floating-actions') as HTMLDivElement;
+    Object.defineProperty(dock, 'offsetWidth', {
+      configurable: true,
+      get: () => dock.classList.contains('is-minimized') ? 46 : 112,
+    });
+
+    await user.click(screen.getByRole('button', { name: '收起快捷操作' }));
+    expect(dock.style.left).toBe('742px');
+
+    await user.click(screen.getByRole('button', { name: '展开快捷操作' }));
+    expect(dock.style.left).toBe('676px');
+    expect(screen.getByRole('button', { name: '顶部' })).toBeTruthy();
+  });
+
+  it('drags the minimized control, snaps it, and stores its position', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(screen.getByRole('button', { name: '收起快捷操作' }));
+    const toggle = screen.getByRole('button', { name: '展开快捷操作' });
+    const dock = toggle.closest('.floating-actions') as HTMLDivElement;
+
+    fireEvent.pointerDown(dock, { clientX: 700, clientY: 500 });
+    fireEvent.pointerMove(window, { clientX: 20, clientY: 180 });
+    fireEvent.pointerUp(window, { clientX: 20, clientY: 180 });
+
+    expect(JSON.parse(window.localStorage.getItem('whybrary.ui.todoDockPosition') ?? '{}')).toMatchObject({ edge: 'left' });
+    expect(dock.className).toContain('is-edge-left');
+    expect(screen.getByRole('button', { name: '展开快捷操作' })).toBeTruthy();
+  });
+
+  it('keeps the minimized control floating when released away from an edge', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(screen.getByRole('button', { name: '收起快捷操作' }));
+    const dock = document.querySelector('.floating-actions') as HTMLDivElement;
+
+    fireEvent.pointerDown(dock, { clientX: 700, clientY: 500 });
+    fireEvent.pointerMove(window, { clientX: 1100, clientY: 300 });
+    fireEvent.pointerUp(window, { clientX: 1100, clientY: 300 });
+
+    expect(JSON.parse(window.localStorage.getItem('whybrary.ui.todoDockPosition') ?? '{}')).toMatchObject({
+      edge: null,
+    });
+    expect(dock.className).not.toContain('is-edge-peek');
+    expect(dock.className).not.toContain('is-edge-left');
+    expect(dock.className).not.toContain('is-edge-right');
+    expect(dock.style.left).toBe('400px');
+  });
+
+  it('requests panel expansion and restoration', async () => {
+    const user = userEvent.setup();
+    const onToggleExpanded = vi.fn();
+    const { rerender } = render(
+      <WhyTodoPanel
+        locale="zh"
+        onAddTodo={vi.fn()}
+        onChangeTodoText={vi.fn()}
+        onDeleteTodo={vi.fn()}
+        onToggleExpanded={onToggleExpanded}
+        onToggleTodo={vi.fn()}
+        space={makeSpace()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '放大待办' }));
+    expect(onToggleExpanded).toHaveBeenCalledOnce();
+    rerender(
+      <WhyTodoPanel
+        isExpanded
+        locale="zh"
+        onAddTodo={vi.fn()}
+        onChangeTodoText={vi.fn()}
+        onDeleteTodo={vi.fn()}
+        onToggleExpanded={onToggleExpanded}
+        onToggleTodo={vi.fn()}
+        space={makeSpace()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: '还原布局' })).toBeTruthy();
+  });
+
   it('scrolls the internal todo list when the list itself is scrollable', async () => {
     const user = userEvent.setup();
     const scrollToSpy = vi.fn();

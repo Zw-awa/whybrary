@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useState } from 'react';
 import { AppDialog } from './components/AppDialog';
 import { BrainCanvas } from './components/BrainCanvas';
+import { GuidedTutorial, type TutorialStep } from './components/GuidedTutorial';
 import { SettingsDialog } from './components/SettingsDialog';
 import { SpaceSidebar } from './components/SpaceSidebar';
 import { WhyTodoPanel } from './components/WhyTodoPanel';
@@ -31,8 +32,10 @@ import type {
 type AppDialogState =
   | null
   | {
+      cancelLabel?: string;
       confirmLabel: string;
       message: string;
+      onCancel?: () => void;
       onConfirm: () => void;
       title: string;
       tone?: 'neutral' | 'danger';
@@ -75,6 +78,13 @@ function getLayoutMode(width: number): DeviceLayoutMode {
   return 'desktop';
 }
 
+function createTutorialSpace(locale: AppLocale): Space {
+  return {
+    ...createSpace(locale === 'zh' ? '教程示例' : 'Tutorial Example', locale),
+    id: `tutorial-${crypto.randomUUID()}`,
+  };
+}
+
 export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(() => buildDefaultState());
   const [hydrated, setHydrated] = useState(false);
@@ -90,6 +100,13 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [dialogState, setDialogState] = useState<AppDialogState>(null);
+  const [expandedPanel, setExpandedPanel] = useState<'todo' | 'map' | null>(null);
+  const [isMapInfoOpen, setIsMapInfoOpen] = useState(false);
+  const [infoPortalTarget, setInfoPortalTarget] = useState<HTMLElement | null>(null);
+  const [expandedInfoPortalTarget, setExpandedInfoPortalTarget] = useState<HTMLElement | null>(null);
+  const [tutorialStep, setTutorialStep] = useState<TutorialStep>(0);
+  const [tutorialOriginalSpaceId, setTutorialOriginalSpaceId] = useState<string | null>(null);
+  const [tutorialSpaceId, setTutorialSpaceId] = useState<string | null>(null);
   const isMobile = layoutMode === 'phone';
   const copy = getCopy(snapshot.locale);
 
@@ -129,6 +146,12 @@ export default function App() {
   }, [isMobile, mobileView]);
 
   useEffect(() => {
+    if (showTutorial && isMobile) {
+      setMobileView(tutorialStep >= 6 ? 'todo' : 'map');
+    }
+  }, [isMobile, showTutorial, tutorialStep]);
+
+  useEffect(() => {
     let cancelled = false;
 
     loadSnapshot()
@@ -138,11 +161,21 @@ export default function App() {
         }
 
         const normalized = normalizeSnapshot(loaded);
+        const shouldStartTutorial = !normalized.hasSeenTutorial;
+        const existingTutorialSpace = normalized.spaces.find((space) => space.id.startsWith('tutorial-'));
+        const tutorialSpace = shouldStartTutorial ? existingTutorialSpace ?? createTutorialSpace(normalized.locale) : null;
         startTransition(() => {
-          setSnapshot(normalized);
+          setSnapshot(tutorialSpace ? {
+            ...normalized,
+            spaces: existingTutorialSpace ? normalized.spaces : [...normalized.spaces, tutorialSpace],
+            activeSpaceId: tutorialSpace.id,
+          } : normalized);
           setHydrated(true);
           setSaveStatus('saved');
-          setShowTutorial(!normalized.hasSeenTutorial);
+          setTutorialOriginalSpaceId(normalized.activeSpaceId);
+          setTutorialSpaceId(tutorialSpace?.id ?? null);
+          setTutorialStep(0);
+          setShowTutorial(shouldStartTutorial);
         });
       })
       .catch(() => {
@@ -151,11 +184,19 @@ export default function App() {
         }
 
         const fallback = buildDefaultState();
+        const tutorialSpace = createTutorialSpace(fallback.locale);
         startTransition(() => {
-          setSnapshot(fallback);
+          setSnapshot({
+            ...fallback,
+            spaces: [...fallback.spaces, tutorialSpace],
+            activeSpaceId: tutorialSpace.id,
+          });
           setHydrated(true);
           setSaveStatus('error');
-          setShowTutorial(!fallback.hasSeenTutorial);
+          setTutorialOriginalSpaceId(fallback.activeSpaceId);
+          setTutorialSpaceId(tutorialSpace.id);
+          setTutorialStep(0);
+          setShowTutorial(true);
         });
       });
 
@@ -234,14 +275,66 @@ export default function App() {
   };
 
   const openTutorial = () => {
+    const tutorialSpace = createTutorialSpace(snapshot.locale);
+    setTutorialOriginalSpaceId(snapshot.activeSpaceId);
+    setTutorialSpaceId(tutorialSpace.id);
+    setTutorialStep(0);
+    updateSnapshot((current) => ({
+      ...current,
+      spaces: [...current.spaces, tutorialSpace],
+      activeSpaceId: tutorialSpace.id,
+    }));
     setShowTutorial(true);
     setIsSettingsOpen(false);
     setIsSidebarOpen(false);
   };
 
+  const completeTutorial = (keepExample: boolean) => {
+    setShowTutorial(false);
+    setDialogState(null);
+    setIsMapEditing(false);
+    setEditingNodeId(null);
+    updateSnapshot((current) => {
+      const spaces = keepExample || !tutorialSpaceId
+        ? current.spaces
+        : current.spaces.filter((space) => space.id !== tutorialSpaceId);
+      const originalExists = tutorialOriginalSpaceId
+        ? spaces.some((space) => space.id === tutorialOriginalSpaceId)
+        : false;
+      return {
+        ...current,
+        hasSeenTutorial: true,
+        spaces,
+        activeSpaceId: originalExists ? tutorialOriginalSpaceId : spaces[0]?.id ?? null,
+      };
+    });
+    setTutorialOriginalSpaceId(null);
+    setTutorialSpaceId(null);
+  };
+
   const closeTutorial = () => {
     setShowTutorial(false);
-    markTutorialSeen();
+    setDialogState({
+      cancelLabel: snapshot.locale === 'zh' ? '删除示例' : 'Delete Example',
+      confirmLabel: snapshot.locale === 'zh' ? '保留示例' : 'Keep Example',
+      message: snapshot.locale === 'zh'
+        ? '是否保留教程中创建的示例空间？'
+        : 'Would you like to keep the example space created by the tutorial?',
+      onCancel: () => completeTutorial(false),
+      onConfirm: () => completeTutorial(true),
+      title: snapshot.locale === 'zh' ? '结束教程' : 'Finish Tutorial',
+    });
+  };
+
+  const advanceTutorial = (expected: TutorialStep) => {
+    if (!showTutorial || tutorialStep !== expected) {
+      return;
+    }
+    if (expected === 7) {
+      closeTutorial();
+      return;
+    }
+    setTutorialStep((expected + 1) as TutorialStep);
   };
 
   const showNotice = (title: string, message: string) => {
@@ -326,11 +419,19 @@ export default function App() {
       message: copy.dialogs.resetBrowserMessage,
       onConfirm: () => {
         const fallback = buildDefaultState(snapshot.locale);
+        const tutorialSpace = createTutorialSpace(fallback.locale);
         clearPreviewSnapshot();
         setEditingNodeId(null);
         setIsMapEditing(false);
-        setShowTutorial(!fallback.hasSeenTutorial);
-        setSnapshot(fallback);
+        setTutorialOriginalSpaceId(fallback.activeSpaceId);
+        setTutorialSpaceId(tutorialSpace.id);
+        setTutorialStep(0);
+        setShowTutorial(true);
+        setSnapshot({
+          ...fallback,
+          spaces: [...fallback.spaces, tutorialSpace],
+          activeSpaceId: tutorialSpace.id,
+        });
         setHydrated(true);
         setSaveStatus('saved');
         setBannerMessage(getCopy(fallback.locale).banners.reset);
@@ -442,6 +543,7 @@ export default function App() {
         };
       }),
     }));
+    advanceTutorial(3);
   };
 
   const handleViewportChange = (viewport: Space['viewport']) => {
@@ -479,6 +581,7 @@ export default function App() {
         ];
       })(),
     }));
+    advanceTutorial(4);
   };
 
   const commitDeleteNodes = (nodeIds: string[]) => {
@@ -499,6 +602,7 @@ export default function App() {
         (edge) => !deleteSet.has(edge.source) && !deleteSet.has(edge.target),
       ),
     }));
+    advanceTutorial(5);
   };
 
   const handleDeleteNodes = (nodeIds: string[]) => {
@@ -536,6 +640,7 @@ export default function App() {
       ...space,
       nodes: [...space.nodes, nextNode],
     }));
+    advanceTutorial(2);
 
     if (isMobile) {
       setMobileView('map');
@@ -587,6 +692,7 @@ export default function App() {
         ...space.todos,
       ],
     }));
+    advanceTutorial(6);
   };
 
   const handleChangeTodoText = (todoId: string, nextText: string) => {
@@ -617,6 +723,7 @@ export default function App() {
           : todo,
       ),
     }));
+    advanceTutorial(7);
   };
 
   const handleDeleteTodo = (todoId: string) => {
@@ -663,12 +770,25 @@ export default function App() {
 
   const showMap = !isMobile || mobileView === 'map';
   const showTodo = !isMobile || mobileView === 'todo';
+  const isOverlayInfoOpen = !isMobile && isMapInfoOpen && expandedPanel === 'map';
+  const isRailInfoOpen = !isMobile && isMapInfoOpen && expandedPanel === null;
+  const toggleExpandedPanel = (panel: 'todo' | 'map') => {
+    setExpandedPanel((current) => current === panel ? null : panel);
+    setIsMapInfoOpen(false);
+  };
 
   return (
-    <div className={`app-shell app-shell--${layoutMode}`}>
-      {!isMobile ? renderSidebar(false) : null}
+    <div className={`app-shell app-shell--${layoutMode} ${expandedPanel ? 'is-panel-expanded' : ''} ${isRailInfoOpen ? 'is-info-open' : ''} ${isOverlayInfoOpen ? 'is-overlay-info-open' : ''}`}>
+      {!isMobile ? (
+        <div className="app-rail">
+          <div className="app-rail__spaces">{renderSidebar(false)}</div>
+          <aside className="app-rail__details">
+            <div className="app-rail__details-host" ref={setInfoPortalTarget} />
+          </aside>
+        </div>
+      ) : null}
 
-      <main className="workspace">
+      <main className={`workspace ${expandedPanel ? 'workspace--panel-expanded' : ''}`}>
         <header className="workspace__header">
           <div className="workspace__title">
             <div>
@@ -695,16 +815,18 @@ export default function App() {
         {bannerMessage ? <div className="workspace__banner">{bannerMessage}</div> : null}
 
         <div
-          className={`workspace__grid ${showMap && showTodo ? '' : 'workspace__grid--single'}`}
+          className={`workspace__grid ${showMap && showTodo ? '' : 'workspace__grid--single'} ${expandedPanel ? `workspace__grid--${expandedPanel}-expanded` : ''} ${isRailInfoOpen ? 'workspace__grid--info-open' : ''}`}
         >
           {showTodo ? (
             <WhyTodoPanel
+              isExpanded={expandedPanel === 'todo'}
               isMobile={isMobile}
               locale={snapshot.locale}
               onAddTodo={handleAddTodo}
               onChangeTodoText={handleChangeTodoText}
               onDeleteTodo={handleDeleteTodo}
               onToggleTodo={handleToggleTodo}
+              onToggleExpanded={() => toggleExpandedPanel('todo')}
               space={activeSpace}
             />
           ) : null}
@@ -715,6 +837,9 @@ export default function App() {
               isEditMode={isMapEditing}
               locale={snapshot.locale}
               isMobile={isMobile}
+              isExpanded={expandedPanel === 'map'}
+              isInfoOpen={isMapInfoOpen}
+              infoPortalTarget={isOverlayInfoOpen ? expandedInfoPortalTarget : infoPortalTarget}
               onAddNeuron={handleAddNeuron}
               onDeleteNodes={handleDeleteNodes}
               onFinishRenameNode={handleFinishRenameNode}
@@ -726,7 +851,10 @@ export default function App() {
               onToggleEditMode={() => {
                 setEditingNodeId(null);
                 setIsMapEditing((current) => !current);
+                advanceTutorial(1);
               }}
+              onToggleExpanded={() => toggleExpandedPanel('map')}
+              onInfoOpenChange={setIsMapInfoOpen}
               onViewportChange={handleViewportChange}
               space={activeSpace}
             />
@@ -734,45 +862,31 @@ export default function App() {
         </div>
 
         {showTutorial ? (
-          <section className="welcome-panel" role="region" aria-label={copy.welcome.regionLabel}>
-            <div className="welcome-panel__card">
-              <p className="eyebrow">{copy.welcome.eyebrow}</p>
-              <h3>{copy.welcome.title}</h3>
-              <p>{copy.welcome.body}</p>
-
-              <div className="welcome-panel__actions">
-                <button className="button button--accent" onClick={closeTutorial} type="button">
-                  {copy.welcome.startEditing}
-                </button>
-                <button className="button" onClick={closeTutorial} type="button">
-                  {copy.welcome.close}
-                </button>
-                <button className="button" onClick={handleImportSnapshot} type="button">
-                  {copy.welcome.importJson}
-                </button>
-                <button className="button" onClick={handleExportSnapshot} type="button">
-                  {copy.welcome.exportJson}
-                </button>
-              </div>
-
-              <div className="welcome-panel__notes">
-                <div className="welcome-note">
-                  <strong>{copy.welcome.stepMapTitle}</strong>
-                  <span>{copy.welcome.stepMapBody}</span>
-                </div>
-                <div className="welcome-note">
-                  <strong>{copy.welcome.stepTodoTitle}</strong>
-                  <span>{copy.welcome.stepTodoBody}</span>
-                </div>
-                <div className="welcome-note">
-                  <strong>{copy.welcome.stepSpacesTitle}</strong>
-                  <span>{copy.welcome.stepSpacesBody}</span>
-                </div>
-              </div>
-            </div>
-          </section>
+          <GuidedTutorial
+            locale={snapshot.locale}
+            onBack={() => {
+              setTutorialStep((current) => {
+                const next = Math.max(0, current - 1) as TutorialStep;
+                if (next === 1) {
+                  setIsMapEditing(false);
+                } else if (next >= 2 && next <= 5) {
+                  setIsMapEditing(true);
+                }
+                return next;
+              });
+            }}
+            onExit={closeTutorial}
+            onNext={() => advanceTutorial(0)}
+            step={tutorialStep}
+          />
         ) : null}
       </main>
+
+      {!isMobile ? (
+        <aside className="expanded-info-drawer">
+          <div className="expanded-info-drawer__host" ref={setExpandedInfoPortalTarget} />
+        </aside>
+      ) : null}
 
       {isMobile ? (
         <>
@@ -821,10 +935,10 @@ export default function App() {
 
       {dialogState ? (
         <AppDialog
-          cancelLabel={copy.dialogs.cancel}
+          cancelLabel={dialogState.cancelLabel ?? copy.dialogs.cancel}
           confirmLabel={dialogState.confirmLabel}
           message={dialogState.message}
-          onCancel={closeDialog}
+          onCancel={dialogState.onCancel ?? closeDialog}
           onConfirm={dialogState.onConfirm}
           title={dialogState.title}
           tone={dialogState.tone}

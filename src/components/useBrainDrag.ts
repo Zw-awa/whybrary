@@ -168,6 +168,7 @@ export function useBrainDrag({
     dragPointerRef,
     dragStateRef,
     handleNodePointerDown,
+    isDragging: dragState?.started ?? false,
   };
 }
 // SPDX-FileCopyrightText: 2026 Zw-awa

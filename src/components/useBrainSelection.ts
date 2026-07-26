@@ -32,6 +32,12 @@ export function useBrainSelection({
   }, [selectedNodeId]);
 
   useEffect(() => {
+    if (!isEditMode) {
+      setIsConnectMode(false);
+    }
+  }, [isEditMode]);
+
+  useEffect(() => {
     if (!selectedNodeId) {
       return;
     }
@@ -168,6 +174,11 @@ export function useBrainSelection({
     setSelectedNodeId(null);
   };
 
+  const startConnectFromNode = (nodeId: string) => {
+    setIsConnectMode(true);
+    setSelectedNodeId(nodeId);
+  };
+
   const toggleMultiSelect = () => {
     setIsInfoMultiSelect((current) => {
       const next = !current;
@@ -193,6 +204,7 @@ export function useBrainSelection({
     selectedNodeId,
     setInfoSelection,
     setSelectedNodeId,
+    startConnectFromNode,
     toggleConnectMode,
     toggleMultiSelect,
   };

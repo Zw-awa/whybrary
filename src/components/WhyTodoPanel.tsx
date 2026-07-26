@@ -6,6 +6,8 @@ import { FloatingActions } from './FloatingActions';
 type WhyTodoPanelProps = {
   isMobile?: boolean;
   locale: AppLocale;
+  isExpanded?: boolean;
+  onToggleExpanded?: () => void;
   space: Space;
   onAddTodo: (text: string) => void;
   onChangeTodoText: (todoId: string, nextText: string) => void;
@@ -16,6 +18,8 @@ type WhyTodoPanelProps = {
 export function WhyTodoPanel({
   isMobile = false,
   locale,
+  isExpanded = false,
+  onToggleExpanded,
   space,
   onAddTodo,
   onChangeTodoText,
@@ -144,9 +148,14 @@ export function WhyTodoPanel({
     <section className="panel panel--todo">
       <div className="panel__header">
         <h2>{copy.todo.title}</h2>
+        {onToggleExpanded ? (
+          <button className="button panel__expand" onClick={onToggleExpanded} type="button">
+            {isExpanded ? copy.todo.restorePanel : copy.todo.expandPanel}
+          </button>
+        ) : null}
       </div>
 
-      <form className="todo-composer" onSubmit={handleSubmit}>
+      <form className="todo-composer" data-tour-id="todo-add" onSubmit={handleSubmit}>
         <input
           className="todo-composer__input"
           maxLength={160}
@@ -179,6 +188,7 @@ export function WhyTodoPanel({
               <button
                 aria-label={todo.completed ? copy.todo.markOpen : copy.todo.markCompleted}
                 className="todo-check"
+                data-tour-id="todo-check"
                 onClick={() => onToggleTodo(todo.id)}
                 type="button"
               >

@@ -21,10 +21,18 @@ export default defineConfig({
       input: 'index.html',
     },
   },
+  optimizeDeps: {
+    entries: ['index.html'],
+    include: ['react', 'react-dom', 'react-dom/client'],
+    noDiscovery: true,
+  },
   server: {
     port: 1420,
     strictPort: true,
-    host: '0.0.0.0',
+    host: '127.0.0.1',
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
   },
   preview: {
     port: 1420,

@@ -78,6 +78,8 @@ type AppCopy = {
     dockTopTitle: string;
     dockFirstOpenTitle: string;
     dockNextOpenTitle: string;
+    expandPanel: string;
+    restorePanel: string;
   };
   map: {
     title: string;
@@ -97,6 +99,8 @@ type AppCopy = {
     delete: string;
     clear: string;
     untitled: string;
+    expandPanel: string;
+    restorePanel: string;
   };
   info: {
     nodes: (count: number) => string;
@@ -231,6 +235,8 @@ const copy: Record<AppLocale, AppCopy> = {
       dockTopTitle: 'Back to top',
       dockFirstOpenTitle: 'Jump to the first open todo',
       dockNextOpenTitle: 'Jump to the next open todo',
+      expandPanel: 'Expand To-Do',
+      restorePanel: 'Restore layout',
     },
     map: {
       title: 'Mind Map',
@@ -239,9 +245,9 @@ const copy: Record<AppLocale, AppCopy> = {
       done: 'Done',
       editContent: 'Edit Content',
       edit: 'Edit',
-      linkModeOn: 'Link Mode On',
-      linkModeOff: 'Link Mode Off',
-      linkOn: 'Link On',
+      linkModeOn: 'Link Mode Enabled',
+      linkModeOff: 'Enable Link Mode',
+      linkOn: 'Link Mode Enabled',
       link: 'Link',
       newPoint: 'New Point',
       editingEnabled: 'Editing enabled',
@@ -250,6 +256,8 @@ const copy: Record<AppLocale, AppCopy> = {
       delete: 'Delete',
       clear: 'Clear',
       untitled: 'Untitled',
+      expandPanel: 'Expand map',
+      restorePanel: 'Restore layout',
     },
     info: {
       nodes: (count) => `${count} nodes`,
@@ -382,6 +390,8 @@ const copy: Record<AppLocale, AppCopy> = {
       dockTopTitle: '回到顶部',
       dockFirstOpenTitle: '跳转到首个未完成待办',
       dockNextOpenTitle: '跳转到下一个未完成待办',
+      expandPanel: '放大待办',
+      restorePanel: '还原布局',
     },
     map: {
       title: '脑图',
@@ -390,9 +400,9 @@ const copy: Record<AppLocale, AppCopy> = {
       done: '完成',
       editContent: '编辑内容',
       edit: '编辑',
-      linkModeOn: '连线模式开启',
-      linkModeOff: '连线模式关闭',
-      linkOn: '连线开启',
+      linkModeOn: '连线模式已打开',
+      linkModeOff: '开启连线模式',
+      linkOn: '连线模式已打开',
       link: '连线',
       newPoint: '新建节点',
       editingEnabled: '已开启编辑',
@@ -401,6 +411,8 @@ const copy: Record<AppLocale, AppCopy> = {
       delete: '删除',
       clear: '清除',
       untitled: '未命名',
+      expandPanel: '放大脑图',
+      restorePanel: '还原布局',
     },
     info: {
       nodes: (count) => `${count} 个节点`,

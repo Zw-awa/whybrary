@@ -6,6 +6,7 @@ type BrainInfoPanelProps = {
   edgesCount: number;
   infoSelection: string[];
   isMobile?: boolean;
+  isRail?: boolean;
   isMultiSelect: boolean;
   locale: AppLocale;
   nodes: SimNode[];
@@ -22,6 +23,7 @@ export function BrainInfoPanel({
   edgesCount,
   infoSelection,
   isMobile = false,
+  isRail = false,
   isMultiSelect,
   locale,
   nodes,
@@ -37,7 +39,7 @@ export function BrainInfoPanel({
 
   return (
     <aside
-      className={`graph-info ${isMobile ? 'graph-info--sheet' : ''}`}
+      className={`graph-info ${isMobile ? 'graph-info--sheet' : ''} ${isRail ? 'graph-info--rail' : ''}`}
       onPointerDown={(event) => event.stopPropagation()}
       onWheelCapture={(event) => event.stopPropagation()}
     >

@@ -45,22 +45,25 @@ function renderCanvas(overrides?: Partial<React.ComponentProps<typeof BrainCanva
   const onToggleConnection = vi.fn();
   const onViewportChange = vi.fn();
 
-  render(
+  const baseProps: React.ComponentProps<typeof BrainCanvas> = {
+    editingNodeId: null,
+    isEditMode: true,
+    locale: 'en',
+    onAddNeuron,
+    onDeleteNodes,
+    onFinishRenameNode,
+    onNodeLabelChange,
+    onPersistNodePositions,
+    onStartRenameNode,
+    onToggleConnection,
+    onToggleEditMode,
+    onViewportChange,
+    space: makeSpace(),
+    ...overrides,
+  };
+  const view = render(
     <BrainCanvas
-      editingNodeId={null}
-      isEditMode
-      locale="en"
-      onAddNeuron={onAddNeuron}
-      onDeleteNodes={onDeleteNodes}
-      onFinishRenameNode={onFinishRenameNode}
-      onNodeLabelChange={onNodeLabelChange}
-      onPersistNodePositions={onPersistNodePositions}
-      onStartRenameNode={onStartRenameNode}
-      onToggleConnection={onToggleConnection}
-      onToggleEditMode={onToggleEditMode}
-      onViewportChange={onViewportChange}
-      space={makeSpace()}
-      {...overrides}
+      {...baseProps}
     />,
   );
 
@@ -75,6 +78,8 @@ function renderCanvas(overrides?: Partial<React.ComponentProps<typeof BrainCanva
     onToggleEditMode,
     onToggleConnection,
     onViewportChange,
+    rerenderCanvas: (nextOverrides: Partial<React.ComponentProps<typeof BrainCanvas>>) =>
+      view.rerender(<BrainCanvas {...baseProps} {...nextOverrides} />),
   };
 }
 
@@ -146,11 +151,33 @@ describe('BrainCanvas interactions', () => {
     expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy();
   });
 
+  it('shows contextual node actions and requests deletion in desktop edit mode', () => {
+    const onRequestDeleteNodes = vi.fn();
+    renderCanvas({ onRequestDeleteNodes });
+    const alpha = screen
+      .getAllByRole('button', { name: 'Alpha' })
+      .find((node) => node.className.includes('mind-node__label')) as HTMLElement;
+
+    fireEvent.pointerDown(alpha.closest('.mind-node') as HTMLElement, { clientX: 100, clientY: 120 });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(onRequestDeleteNodes).toHaveBeenCalledWith(['a'], ['Alpha']);
+  });
+
+  it('renders node information into the desktop rail host', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    renderCanvas({ infoPortalTarget: host, isInfoOpen: true });
+
+    expect(host.querySelector('.graph-info--rail')).toBeTruthy();
+    expect(host.textContent).toContain('2 nodes');
+  });
+
   it('does not show link mode controls outside edit mode', () => {
     renderCanvas({ isEditMode: false });
 
-    expect(screen.queryByRole('button', { name: 'Link Mode Off' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Link Mode On' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enable Link Mode' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Link Mode Enabled' })).toBeNull();
   });
 
   it('uses explicit link mode before creating a connection', async () => {
@@ -166,12 +193,31 @@ describe('BrainCanvas interactions', () => {
     await user.click(beta);
     expect(onToggleConnection).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Link Mode Off' }));
+    await user.click(screen.getByRole('button', { name: 'Enable Link Mode' }));
     fireEvent.pointerDown(alpha);
     fireEvent.click(alpha);
     fireEvent.pointerDown(beta);
     fireEvent.click(beta);
     expect(onToggleConnection).toHaveBeenCalledWith('a', 'b');
+  });
+
+  it('allows dragging after leaving edit mode while link mode was active', () => {
+    vi.useFakeTimers();
+    const { onPersistNodePositions, rerenderCanvas } = renderCanvas();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enable Link Mode' }));
+    rerenderCanvas({ isEditMode: false });
+    const alpha = screen.getByRole('button', { name: 'Alpha' });
+    const nodeContainer = alpha.closest('.mind-node') as HTMLElement;
+
+    flushAnimationFrame();
+    fireEvent.pointerDown(nodeContainer, { clientX: 100, clientY: 120 });
+    fireEvent.pointerMove(window, { clientX: 180, clientY: 220 });
+    flushAnimationFrame(3);
+    fireEvent.pointerUp(window, { clientX: 180, clientY: 220 });
+    act(() => vi.advanceTimersByTime(220));
+
+    expect(onPersistNodePositions).toHaveBeenCalled();
   });
 
   it('zooms the viewport around the pointer position', () => {
@@ -442,7 +488,7 @@ describe('BrainCanvas interactions', () => {
       .filter((node) => node.className.includes('mind-node__label'));
     const alpha = graphLabels.find((node) => node.textContent === 'Alpha') as HTMLElement;
 
-    await user.click(screen.getByRole('button', { name: 'Link Mode Off' }));
+    await user.click(screen.getByRole('button', { name: 'Enable Link Mode' }));
     fireEvent.pointerDown(alpha);
     fireEvent.click(alpha);
     fireEvent.pointerDown(alpha);
@@ -461,7 +507,7 @@ describe('BrainCanvas interactions', () => {
     const alpha = graphLabels.find((node) => node.textContent === 'Alpha') as HTMLElement;
     const beta = graphLabels.find((node) => node.textContent === 'Beta') as HTMLElement;
 
-    await user.click(screen.getByRole('button', { name: 'Link Mode Off' }));
+    await user.click(screen.getByRole('button', { name: 'Enable Link Mode' }));
     fireEvent.pointerDown(alpha);
     fireEvent.click(alpha);
     fireEvent.click(shell);

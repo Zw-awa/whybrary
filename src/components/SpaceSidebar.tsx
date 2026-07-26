@@ -45,7 +45,7 @@ export function SpaceSidebar({
   const copy = getCopy(locale);
 
   return (
-    <aside className={`sidebar ${isDrawer ? 'sidebar--drawer' : ''}`}>
+    <aside className={`sidebar ${isDrawer ? 'sidebar--drawer' : ''}`} data-tour-id="spaces">
       <div className="sidebar__brand">
         <div>
           <p className="eyebrow">{drawerTitle}</p>

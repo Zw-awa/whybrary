@@ -16,7 +16,14 @@ vi.mock('./lib/persistence', () => ({
 }));
 
 vi.mock('./components/BrainCanvas', () => ({
-  BrainCanvas: ({ onDeleteNodes, space }: { onDeleteNodes: (nodeIds: string[]) => void; space: AppSnapshot['spaces'][number] }) => (
+  BrainCanvas: ({ onAddNeuron, onDeleteNodes, onInfoOpenChange, onToggleEditMode, onToggleExpanded, space }: {
+    onAddNeuron?: () => unknown;
+    onDeleteNodes: (nodeIds: string[]) => void;
+    onInfoOpenChange?: (open: boolean) => void;
+    onToggleEditMode?: () => void;
+    onToggleExpanded?: () => void;
+    space: AppSnapshot['spaces'][number];
+  }) => (
     <section data-testid="brain-canvas-mock">
       <div>
         {space.nodes.length} nodes / {space.edges.length} edges
@@ -24,25 +31,35 @@ vi.mock('./components/BrainCanvas', () => ({
       <button onClick={() => onDeleteNodes(['node-a'])} type="button">
         Delete Node A
       </button>
+      <button onClick={() => onInfoOpenChange?.(true)} type="button">Mock Open Info</button>
+      <button onClick={onToggleExpanded} type="button">Mock Expand Map</button>
+      <button data-tour-id="edit-map" onClick={onToggleEditMode} type="button">Mock Edit Map</button>
+      <button data-tour-id="add-node" onClick={onAddNeuron} type="button">Mock Add Node</button>
     </section>
   ),
 }));
 
 vi.mock('./components/WhyTodoPanel', () => ({
-  WhyTodoPanel: ({ space }: { space: AppSnapshot['spaces'][number] }) => (
-    <section data-testid="todo-panel-mock">{space.todos.length} todos</section>
+  WhyTodoPanel: ({ onToggleExpanded, space }: {
+    onToggleExpanded?: () => void;
+    space: AppSnapshot['spaces'][number];
+  }) => (
+    <section data-testid="todo-panel-mock">
+      {space.todos.length} todos
+      <button onClick={onToggleExpanded} type="button">Mock Expand Todo</button>
+    </section>
   ),
 }));
 
 import App from './App';
 
-function makeSnapshot(): AppSnapshot {
+function makeSnapshot(hasSeenTutorial = true): AppSnapshot {
   return {
     locale: 'en',
     theme: 'dark',
     activeSpaceId: 'space-1',
     lastOpenedAt: '2026-01-01T00:00:00.000Z',
-    hasSeenTutorial: false,
+    hasSeenTutorial,
     spaces: [
       {
         id: 'space-1',
@@ -130,7 +147,55 @@ describe('App integration', () => {
     expect(await screen.findByRole('heading', { name: 'Loaded Space' })).toBeTruthy();
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'));
     expect(screen.getByRole('button', { name: 'Use Light Theme' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Whybrary quick tutorial' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Guided tutorial' })).toBeNull();
+  });
+
+  it('closes map details before expanding the todo panel', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Open Info' }));
+    expect(document.querySelector('.app-shell')?.className).toContain('is-info-open');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Expand Todo' }));
+    const appShell = document.querySelector('.app-shell') as HTMLElement;
+    const workspaceGrid = document.querySelector('.workspace__grid') as HTMLElement;
+    expect(appShell.className).toContain('is-panel-expanded');
+    expect(appShell.className).not.toContain('is-info-open');
+    expect(workspaceGrid.className).toContain('workspace__grid--todo-expanded');
+    expect(workspaceGrid.className).not.toContain('workspace__grid--info-open');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Expand Todo' }));
+    expect(appShell.className).not.toContain('is-panel-expanded');
+  });
+
+  it('keeps the map in the expanded grid column and restores it', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Expand Map' }));
+    const workspaceGrid = document.querySelector('.workspace__grid') as HTMLElement;
+    expect(workspaceGrid.className).toContain('workspace__grid--map-expanded');
+    expect(screen.getByTestId('brain-canvas-mock')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Expand Map' }));
+    expect(workspaceGrid.className).not.toContain('workspace__grid--map-expanded');
+  });
+
+  it('opens map details as an overlay without leaving expanded mode', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Expand Map' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Open Info' }));
+
+    const appShell = document.querySelector('.app-shell') as HTMLElement;
+    const workspaceGrid = document.querySelector('.workspace__grid') as HTMLElement;
+    expect(appShell.className).toContain('is-panel-expanded');
+    expect(appShell.className).toContain('is-overlay-info-open');
+    expect(appShell.className).not.toContain('is-info-open');
+    expect(workspaceGrid.className).toContain('workspace__grid--map-expanded');
+    expect(workspaceGrid.className).not.toContain('workspace__grid--info-open');
   });
 
   it('opens settings and switches the interface language to chinese', async () => {
@@ -172,7 +237,7 @@ describe('App integration', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'My First Space' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Tutorial Example' })).toBeTruthy();
     expect(document.documentElement.dataset.theme).toBe('light');
   });
 
@@ -264,26 +329,44 @@ describe('App integration', () => {
     expect(screen.getByText('Snapshot imported successfully.')).toBeTruthy();
   });
 
-  it('dismisses the tutorial when editing starts', async () => {
+  it('starts the guided tutorial in an isolated example space', async () => {
+    loadSnapshotMock.mockResolvedValue(makeSnapshot(false));
     render(<App />);
-    await screen.findByRole('heading', { name: 'Loaded Space' });
+    await screen.findByRole('heading', { name: 'Tutorial Example' });
 
-    expect(screen.getByRole('region', { name: 'Whybrary quick tutorial' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Start Editing' }));
-    expect(screen.queryByRole('region', { name: 'Whybrary quick tutorial' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Guided tutorial' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(screen.getByText('Edit the map')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Editing' }));
+    expect(screen.getByText('Create a node')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Node' }));
+    expect(screen.getByText('Move the idea')).toBeTruthy();
+    expect(screen.getByText('Finish naming the node')).toBeTruthy();
+    expect(screen.getByText('Enter')).toBeTruthy();
   });
 
-  it('opens the tutorial again from settings after it has been closed', async () => {
+  it('places the tutorial exit confirmation above the tutorial overlay', async () => {
+    loadSnapshotMock.mockResolvedValue(makeSnapshot(false));
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Tutorial Example' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Exit' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Guided tutorial' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Finish Tutorial' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Keep Example' })).toBeTruthy();
+  });
+
+  it('opens the tutorial again from settings', async () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(screen.queryByRole('region', { name: 'Whybrary quick tutorial' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open Tutorial' }));
 
-    expect(screen.getByRole('region', { name: 'Whybrary quick tutorial' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Guided tutorial' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Tutorial Example' })).toBeTruthy();
   });
 
   it('does not auto-open the tutorial for older saved snapshots that lack the new flag', async () => {
@@ -295,7 +378,7 @@ describe('App integration', () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });
 
-    expect(screen.queryByRole('region', { name: 'Whybrary quick tutorial' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Guided tutorial' })).toBeNull();
   });
 
   it('resets browser-local preview data to a fresh default state', async () => {
@@ -305,7 +388,7 @@ describe('App integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset Browser Data' }));
     fireEvent.click(screen.getByRole('button', { name: 'Reset Data' }));
 
-    expect(await screen.findByRole('heading', { name: 'My First Space' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Tutorial Example' })).toBeTruthy();
     expect(clearPreviewSnapshotMock).toHaveBeenCalledOnce();
     expect(screen.getByText('Browser-local snapshot reset.')).toBeTruthy();
   });
