@@ -28,7 +28,13 @@ export function BrainEdgeLayer({ edges, nodeById, viewport }: BrainEdgeLayerProp
           y: target.y * viewport.zoom + viewport.y,
         };
 
-        return <path className="mind-map__edge" d={buildPath(screenSource, screenTarget)} key={edge.id} />;
+        return (
+          <path
+            className="mind-map__edge"
+            d={buildPath(screenSource, screenTarget)}
+            key={edge.id}
+          />
+        );
       })}
     </svg>
   );

@@ -144,12 +144,39 @@ export function useBrainViewport({
     });
   };
 
+  const fitToNodes = () => {
+    const shell = shellRef.current;
+    if (!shell || nodes.length === 0) return;
+    setTrackedNodeId(null);
+    const minX = Math.min(...nodes.map((node) => node.x));
+    const maxX = Math.max(...nodes.map((node) => node.x));
+    const minY = Math.min(...nodes.map((node) => node.y));
+    const maxY = Math.max(...nodes.map((node) => node.y));
+    const padding = 100;
+    const width = Math.max(1, maxX - minX);
+    const height = Math.max(1, maxY - minY);
+    const zoom = clamp(
+      Math.min(
+        (shell.clientWidth - padding * 2) / width,
+        (shell.clientHeight - padding * 2) / height,
+      ),
+      0.35,
+      1.4,
+    );
+    onViewportChange({
+      x: shell.clientWidth / 2 - ((minX + maxX) / 2) * zoom,
+      y: shell.clientHeight / 2 - ((minY + maxY) / 2) * zoom,
+      zoom,
+    });
+  };
+
   return {
     clearTrackedNode: () => setTrackedNodeId(null),
     commitTrackedViewportAndClear,
     effectiveViewport,
     handleBackgroundPointerDown,
     handleWheel,
+    fitToNodes,
     isPanning: panState !== null,
     setTrackedNodeId,
     trackedNodeId,

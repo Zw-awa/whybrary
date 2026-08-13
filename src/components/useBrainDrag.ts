@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type MutableRefObject, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from 'react';
 import type { SimNode } from '../lib/brainPhysics';
 import type { BrainNode, Space } from '../types';
 
@@ -117,7 +124,15 @@ export function useBrainDrag({
       window.removeEventListener('pointerup', handleEnd);
       window.removeEventListener('pointercancel', handleEnd);
     };
-  }, [dragState, effectiveViewport, onPersistNodePositions, onSelectNode, shellRef, simNodesRef, space]);
+  }, [
+    dragState,
+    effectiveViewport,
+    onPersistNodePositions,
+    onSelectNode,
+    shellRef,
+    simNodesRef,
+    space,
+  ]);
 
   useEffect(() => {
     return () => {

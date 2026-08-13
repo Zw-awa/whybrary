@@ -88,8 +88,8 @@ Whybrary is usable and under active refinement.
 
 Current automated coverage is split across three layers:
 
-- Frontend tests: `51` Vitest cases across `App`, `BrainCanvas`, persistence, defaults, snapshot transfer, and force simulation
-- Rust persistence tests: `8` SQLite-focused tests for empty DB load, snapshot round-trip, stale row cleanup, active-space cleanup, schema version initialization, migration idempotence, legacy schema migration, and future-version rejection
+- Frontend tests: `89` Vitest cases across `App`, `BrainCanvas`, persistence, defaults, snapshot transfer, workspace reducer/diff, and force simulation
+- Rust persistence tests: `11` SQLite-focused tests for empty DB load, snapshot round-trip, stale row cleanup, active-space cleanup, schema version initialization, v1 -> v2 migration, incremental mutations, revision conflicts, and future-version rejection
 - Real Tauri runtime smoke: a dedicated Linux CI job boots the Tauri app under `xvfb`, writes to a real SQLite file, emits a smoke report, and exits
 
 Current GitHub Actions workflows:

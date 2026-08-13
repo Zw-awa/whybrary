@@ -16,10 +16,7 @@ const MAX_TEXT_LENGTH = 160;
 const MAX_SPACE_NAME_LENGTH = 80;
 
 function safeTheme(): ThemeMode {
-  if (
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches
-  ) {
+  if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
     return 'dark';
   }
 
@@ -104,9 +101,7 @@ function normalizeViewport(viewport: ViewportState | null | undefined): Viewport
   }
 
   const finite =
-    Number.isFinite(viewport.x) &&
-    Number.isFinite(viewport.y) &&
-    Number.isFinite(viewport.zoom);
+    Number.isFinite(viewport.x) && Number.isFinite(viewport.y) && Number.isFinite(viewport.zoom);
 
   if (!finite) {
     return defaultViewport();
@@ -188,15 +183,21 @@ function normalizeSpace(space: Space): Space {
   const rawNodes = (Array.isArray(space.nodes) ? space.nodes : [])
     .slice(0, MAX_NODES_PER_SPACE)
     .map((node, index) => ({
-    id: typeof node?.id === 'string' && node.id ? node.id : `imported-node-${index + 1}`,
-    position: {
-      x: asFiniteNumber(node?.position?.x, 220 + index * 24),
-      y: asFiniteNumber(node?.position?.y, 180 + index * 24),
-    },
-    data: {
-      label: clampText(node.data?.label, fallbackNodeLabel(locale)),
-    },
-  }));
+      id: typeof node?.id === 'string' && node.id ? node.id : `imported-node-${index + 1}`,
+      position: {
+        x: asFiniteNumber(node?.position?.x, 220 + index * 24),
+        y: asFiniteNumber(node?.position?.y, 180 + index * 24),
+      },
+      data: {
+        label: clampText(node.data?.label, fallbackNodeLabel(locale)),
+        category: ['idea', 'reason', 'question', 'action'].includes(node.data?.category ?? '')
+          ? node.data.category
+          : undefined,
+        color: ['neutral', 'blue', 'green', 'amber', 'red'].includes(node.data?.color ?? '')
+          ? node.data.color
+          : undefined,
+      },
+    }));
 
   const minX = rawNodes.length > 0 ? Math.min(...rawNodes.map((node) => node.position.x)) : 0;
   const minY = rawNodes.length > 0 ? Math.min(...rawNodes.map((node) => node.position.y)) : 0;
@@ -215,28 +216,39 @@ function normalizeSpace(space: Space): Space {
         y: node.position.y + offsetY,
       },
     })),
-    edges: (Array.isArray(space.edges) ? space.edges : []).slice(0, MAX_EDGES_PER_SPACE).map((edge, index) => ({
-      id: typeof edge?.id === 'string' && edge.id ? edge.id : `imported-edge-${index + 1}`,
-      source: typeof edge?.source === 'string' ? edge.source : '',
-      target: typeof edge?.target === 'string' ? edge.target : '',
-    })),
-    todos: (Array.isArray(space.todos) ? space.todos : []).slice(0, MAX_TODOS_PER_SPACE).map((todo, index) => ({
-      ...todo,
-      id: typeof todo?.id === 'string' && todo.id ? todo.id : `imported-todo-${index + 1}`,
-      text: typeof todo.text === 'string' ? todo.text.slice(0, MAX_TEXT_LENGTH) : '',
-      completed: Boolean(todo?.completed),
-      createdAt: typeof todo?.createdAt === 'string' && todo.createdAt ? todo.createdAt : nowIso(),
-      updatedAt: typeof todo?.updatedAt === 'string' && todo.updatedAt ? todo.updatedAt : nowIso(),
-    })),
+    edges: (Array.isArray(space.edges) ? space.edges : [])
+      .slice(0, MAX_EDGES_PER_SPACE)
+      .map((edge, index) => ({
+        id: typeof edge?.id === 'string' && edge.id ? edge.id : `imported-edge-${index + 1}`,
+        source: typeof edge?.source === 'string' ? edge.source : '',
+        target: typeof edge?.target === 'string' ? edge.target : '',
+      })),
+    todos: (Array.isArray(space.todos) ? space.todos : [])
+      .slice(0, MAX_TODOS_PER_SPACE)
+      .map((todo, index) => ({
+        ...todo,
+        id: typeof todo?.id === 'string' && todo.id ? todo.id : `imported-todo-${index + 1}`,
+        text: typeof todo.text === 'string' ? todo.text.slice(0, MAX_TEXT_LENGTH) : '',
+        completed: Boolean(todo?.completed),
+        priority: ['low', 'medium', 'high'].includes(todo?.priority ?? '')
+          ? todo.priority
+          : undefined,
+        dueDate:
+          typeof todo?.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(todo.dueDate)
+            ? todo.dueDate
+            : undefined,
+        createdAt:
+          typeof todo?.createdAt === 'string' && todo.createdAt ? todo.createdAt : nowIso(),
+        updatedAt:
+          typeof todo?.updatedAt === 'string' && todo.updatedAt ? todo.updatedAt : nowIso(),
+      })),
     viewport: normalizeViewport(space.viewport),
     createdAt: typeof space?.createdAt === 'string' && space.createdAt ? space.createdAt : nowIso(),
     updatedAt: typeof space?.updatedAt === 'string' && space.updatedAt ? space.updatedAt : nowIso(),
   };
 }
 
-export function normalizeSnapshot(
-  snapshot: AppSnapshot | null | undefined,
-): AppSnapshot {
+export function normalizeSnapshot(snapshot: AppSnapshot | null | undefined): AppSnapshot {
   if (!snapshot || !snapshot.spaces || snapshot.spaces.length === 0) {
     return buildDefaultState();
   }
@@ -249,7 +261,7 @@ export function normalizeSnapshot(
 
   return {
     locale,
-    theme: snapshot.theme === 'light' ? 'light' : 'dark',
+    theme: snapshot.theme === 'light' || snapshot.theme === 'system' ? snapshot.theme : 'dark',
     spaces: spaces.map((space) => ({
       ...space,
       name: clampText(space.name, fallbackSpaceName(locale), MAX_SPACE_NAME_LENGTH),

@@ -88,8 +88,8 @@ Whybrary 已经可用，当前仍在持续打磨交互和工程结构。
 
 当前自动化验证分成三层：
 
-- 前端测试：`51` 个 Vitest 用例，覆盖 `App`、`BrainCanvas`、持久化、默认值、快照传输和力导向逻辑
-- Rust 持久化测试：`8` 个 SQLite 相关测试，覆盖空库加载、快照 round-trip、旧数据清理、active space 清理、schema version 初始化、迁移幂等、旧 schema 迁移和未来版本拒绝
+- 前端测试：`89` 个 Vitest 用例，覆盖 `App`、`BrainCanvas`、持久化、默认值、快照传输、工作区 reducer/diff 和力导向逻辑
+- Rust 持久化测试：`11` 个 SQLite 相关测试，覆盖空库加载、快照 round-trip、旧数据清理、active space 清理、schema version 初始化、v1 -> v2 迁移、增量 mutation、revision 冲突和未来版本拒绝
 - 真实 Tauri runtime 烟测：单独的 Linux CI job 会在 `xvfb` 下启动真实 Tauri 应用，写入真实 SQLite 文件，生成 smoke report 后退出
 
 当前 GitHub Actions workflow：

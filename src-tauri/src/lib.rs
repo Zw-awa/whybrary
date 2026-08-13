@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager};
 #[cfg(desktop)]
 use tauri::{LogicalSize, Size};
 
-const LATEST_SCHEMA_VERSION: i32 = 1;
+const LATEST_SCHEMA_VERSION: i32 = 3;
 const SMOKE_MODE_ENV: &str = "WHYBRARY_TAURI_SMOKE";
 const APP_DATA_DIR_OVERRIDE_ENV: &str = "WHYBRARY_APP_DATA_DIR";
 
@@ -59,6 +59,28 @@ CREATE TABLE IF NOT EXISTS todos (
 );
 "#;
 
+const MIGRATION_2_SQL: &str = r#"
+INSERT INTO settings (key, value)
+VALUES ('storageRevision', '0')
+ON CONFLICT(key) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_nodes_space_order
+ON nodes(space_id, order_index);
+
+CREATE INDEX IF NOT EXISTS idx_edges_space_order
+ON edges(space_id, order_index);
+
+CREATE INDEX IF NOT EXISTS idx_todos_space_order
+ON todos(space_id, order_index);
+"#;
+
+const MIGRATION_3_SQL: &str = r#"
+ALTER TABLE nodes ADD COLUMN category TEXT;
+ALTER TABLE nodes ADD COLUMN color TEXT;
+ALTER TABLE todos ADD COLUMN priority TEXT;
+ALTER TABLE todos ADD COLUMN due_date TEXT;
+"#;
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct ViewportState {
@@ -78,6 +100,10 @@ struct BrainNodePosition {
 #[serde(rename_all = "camelCase")]
 struct BrainNodeData {
     label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    color: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -104,6 +130,10 @@ struct TodoItem {
     completed: bool,
     created_at: String,
     updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    priority: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    due_date: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -128,6 +158,103 @@ struct AppSnapshot {
     active_space_id: Option<String>,
     last_opened_at: String,
     has_seen_tutorial: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PersistedSettings {
+    locale: String,
+    theme: String,
+    active_space_id: Option<String>,
+    last_opened_at: String,
+    has_seen_tutorial: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct SpaceRecord {
+    id: String,
+    name: String,
+    viewport: ViewportState,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(tag = "kind")]
+enum WorkspaceMutation {
+    #[serde(rename = "settings.patch")]
+    SettingsPatch { settings: PersistedSettings },
+    #[serde(rename = "space.upsert")]
+    SpaceUpsert {
+        space: SpaceRecord,
+        #[serde(rename = "orderIndex")]
+        order_index: i64,
+    },
+    #[serde(rename = "space.delete")]
+    SpaceDelete {
+        #[serde(rename = "spaceId")]
+        space_id: String,
+    },
+    #[serde(rename = "node.upsert")]
+    NodeUpsert {
+        #[serde(rename = "spaceId")]
+        space_id: String,
+        node: BrainNode,
+        #[serde(rename = "orderIndex")]
+        order_index: i64,
+    },
+    #[serde(rename = "node.delete")]
+    NodeDelete {
+        #[serde(rename = "nodeId")]
+        node_id: String,
+    },
+    #[serde(rename = "edge.upsert")]
+    EdgeUpsert {
+        #[serde(rename = "spaceId")]
+        space_id: String,
+        edge: BrainEdge,
+        #[serde(rename = "orderIndex")]
+        order_index: i64,
+    },
+    #[serde(rename = "edge.delete")]
+    EdgeDelete {
+        #[serde(rename = "edgeId")]
+        edge_id: String,
+    },
+    #[serde(rename = "todo.upsert")]
+    TodoUpsert {
+        #[serde(rename = "spaceId")]
+        space_id: String,
+        todo: TodoItem,
+        #[serde(rename = "orderIndex")]
+        order_index: i64,
+    },
+    #[serde(rename = "todo.delete")]
+    TodoDelete {
+        #[serde(rename = "todoId")]
+        todo_id: String,
+    },
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct MutationBatch {
+    expected_revision: i64,
+    next_revision: i64,
+    mutations: Vec<WorkspaceMutation>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct LoadedWorkspace {
+    snapshot: AppSnapshot,
+    revision: i64,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+struct SaveResult {
+    revision: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -164,6 +291,20 @@ fn migrate_to_v1(connection: &Connection) -> Result<(), String> {
     set_schema_version(connection, 1)
 }
 
+fn migrate_to_v2(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(MIGRATION_2_SQL)
+        .map_err(|error| format!("Unable to apply SQLite migration 1 -> 2: {error}"))?;
+    set_schema_version(connection, 2)
+}
+
+fn migrate_to_v3(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(MIGRATION_3_SQL)
+        .map_err(|error| format!("Unable to apply SQLite migration 2 -> 3: {error}"))?;
+    set_schema_version(connection, 3)
+}
+
 fn run_migrations(connection: &Connection) -> Result<(), String> {
     let mut version = load_schema_version(connection)?;
     if version > LATEST_SCHEMA_VERSION {
@@ -175,6 +316,8 @@ fn run_migrations(connection: &Connection) -> Result<(), String> {
     while version < LATEST_SCHEMA_VERSION {
         match version {
             0 => migrate_to_v1(connection)?,
+            1 => migrate_to_v2(connection)?,
+            2 => migrate_to_v3(connection)?,
             _ => {
                 return Err(format!(
                     "No SQLite migration path from version {version} to {LATEST_SCHEMA_VERSION}."
@@ -235,10 +378,27 @@ fn load_setting(connection: &Connection, key: &str) -> Result<Option<String>, St
         .map_err(|error| format!("Unable to load setting '{key}': {error}"))
 }
 
+fn load_storage_revision(connection: &Connection) -> Result<i64, String> {
+    let raw = load_setting(connection, "storageRevision")?.unwrap_or_else(|| "0".to_string());
+    raw.parse::<i64>()
+        .map_err(|error| format!("Invalid SQLite storage revision '{raw}': {error}"))
+}
+
+fn upsert_setting(connection: &Connection, key: &str, value: &str) -> Result<(), String> {
+    connection
+        .execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )
+        .map_err(|error| format!("Unable to save setting '{key}': {error}"))?;
+    Ok(())
+}
+
 fn load_nodes(connection: &Connection, space_id: &str) -> Result<Vec<BrainNode>, String> {
     let mut statement = connection
         .prepare(
-            "SELECT id, label, position_x, position_y
+            "SELECT id, label, position_x, position_y, category, color
              FROM nodes
              WHERE space_id = ?1
              ORDER BY order_index ASC",
@@ -253,7 +413,7 @@ fn load_nodes(connection: &Connection, space_id: &str) -> Result<Vec<BrainNode>,
                     x: row.get(2)?,
                     y: row.get(3)?,
                 },
-                data: BrainNodeData { label: row.get(1)? },
+                data: BrainNodeData { label: row.get(1)?, category: row.get(4)?, color: row.get(5)? },
             })
         })
         .map_err(|error| format!("Unable to query nodes: {error}"))?;
@@ -297,7 +457,7 @@ fn load_edges(connection: &Connection, space_id: &str) -> Result<Vec<BrainEdge>,
 fn load_todos(connection: &Connection, space_id: &str) -> Result<Vec<TodoItem>, String> {
     let mut statement = connection
         .prepare(
-            "SELECT id, text, completed, created_at, updated_at
+            "SELECT id, text, completed, created_at, updated_at, priority, due_date
              FROM todos
              WHERE space_id = ?1
              ORDER BY order_index ASC",
@@ -312,6 +472,8 @@ fn load_todos(connection: &Connection, space_id: &str) -> Result<Vec<TodoItem>, 
                 completed: row.get::<_, i64>(2)? != 0,
                 created_at: row.get(3)?,
                 updated_at: row.get(4)?,
+                priority: row.get(5)?,
+                due_date: row.get(6)?,
             })
         })
         .map_err(|error| format!("Unable to query todos: {error}"))?;
@@ -390,7 +552,11 @@ fn load_snapshot_from_connection(connection: &Connection) -> Result<AppSnapshot,
     })
 }
 
-fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapshot) -> Result<(), String> {
+fn replace_snapshot_to_connection(
+    connection: &mut Connection,
+    snapshot: &AppSnapshot,
+    revision: i64,
+) -> Result<(), String> {
     let transaction = connection
         .transaction()
         .map_err(|error| format!("Unable to open SQLite transaction: {error}"))?;
@@ -451,6 +617,13 @@ fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapsh
         )
         .map_err(|error| format!("Unable to save tutorial setting: {error}"))?;
 
+    transaction
+        .execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+            params!["storageRevision", revision.to_string()],
+        )
+        .map_err(|error| format!("Unable to save storage revision: {error}"))?;
+
     for (space_index, space) in snapshot.spaces.iter().enumerate() {
         transaction
             .execute(
@@ -474,15 +647,17 @@ fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapsh
             transaction
                 .execute(
                     "INSERT INTO nodes (
-                      id, space_id, label, order_index, position_x, position_y
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                      id, space_id, label, order_index, position_x, position_y, category, color
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                     params![
                         node.id,
                         space.id,
                         node.data.label,
                         node_index as i64,
                         node.position.x,
-                        node.position.y
+                        node.position.y,
+                        node.data.category,
+                        node.data.color
                     ],
                 )
                 .map_err(|error| format!("Unable to save node '{}': {error}", node.id))?;
@@ -509,8 +684,8 @@ fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapsh
             transaction
                 .execute(
                     "INSERT INTO todos (
-                      id, space_id, text, completed, order_index, created_at, updated_at
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                      id, space_id, text, completed, order_index, created_at, updated_at, priority, due_date
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                     params![
                         todo.id,
                         space.id,
@@ -518,7 +693,9 @@ fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapsh
                         if todo.completed { 1 } else { 0 },
                         todo_index as i64,
                         todo.created_at,
-                        todo.updated_at
+                        todo.updated_at,
+                        todo.priority,
+                        todo.due_date
                     ],
                 )
                 .map_err(|error| format!("Unable to save todo '{}': {error}", todo.id))?;
@@ -532,6 +709,217 @@ fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapsh
     Ok(())
 }
 
+fn save_snapshot_to_connection(connection: &mut Connection, snapshot: &AppSnapshot) -> Result<(), String> {
+    let revision = load_storage_revision(connection)?;
+    replace_snapshot_to_connection(connection, snapshot, revision)
+}
+
+fn load_workspace_from_connection(connection: &Connection) -> Result<LoadedWorkspace, String> {
+    Ok(LoadedWorkspace {
+        snapshot: load_snapshot_from_connection(connection)?,
+        revision: load_storage_revision(connection)?,
+    })
+}
+
+fn apply_mutations_to_connection(
+    connection: &mut Connection,
+    batch: &MutationBatch,
+) -> Result<SaveResult, String> {
+    let current_revision = load_storage_revision(connection)?;
+    if current_revision != batch.expected_revision {
+        return Err(format!(
+            "SQLite revision conflict: expected {}, found {current_revision}.",
+            batch.expected_revision
+        ));
+    }
+    if batch.next_revision != batch.expected_revision + 1 {
+        return Err(format!(
+            "Invalid next SQLite revision {} for expected revision {}.",
+            batch.next_revision, batch.expected_revision
+        ));
+    }
+
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("Unable to open SQLite mutation transaction: {error}"))?;
+
+    for mutation in &batch.mutations {
+        match mutation {
+            WorkspaceMutation::SettingsPatch { settings } => {
+                upsert_setting(&transaction, "locale", &settings.locale)?;
+                upsert_setting(&transaction, "theme", &settings.theme)?;
+                upsert_setting(&transaction, "lastOpenedAt", &settings.last_opened_at)?;
+                upsert_setting(
+                    &transaction,
+                    "hasSeenTutorial",
+                    if settings.has_seen_tutorial { "true" } else { "false" },
+                )?;
+                if let Some(active_space_id) = &settings.active_space_id {
+                    upsert_setting(&transaction, "activeSpaceId", active_space_id)?;
+                } else {
+                    transaction
+                        .execute("DELETE FROM settings WHERE key = 'activeSpaceId'", [])
+                        .map_err(|error| format!("Unable to clear active space setting: {error}"))?;
+                }
+            }
+            WorkspaceMutation::SpaceUpsert { space, order_index } => {
+                transaction
+                    .execute(
+                        "INSERT INTO spaces (
+                          id, name, order_index, viewport_x, viewport_y, viewport_zoom, created_at, updated_at
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                         ON CONFLICT(id) DO UPDATE SET
+                           name = excluded.name,
+                           order_index = excluded.order_index,
+                           viewport_x = excluded.viewport_x,
+                           viewport_y = excluded.viewport_y,
+                           viewport_zoom = excluded.viewport_zoom,
+                           created_at = excluded.created_at,
+                           updated_at = excluded.updated_at",
+                        params![
+                            space.id,
+                            space.name,
+                            order_index,
+                            space.viewport.x,
+                            space.viewport.y,
+                            space.viewport.zoom,
+                            space.created_at,
+                            space.updated_at
+                        ],
+                    )
+                    .map_err(|error| format!("Unable to upsert space '{}': {error}", space.id))?;
+            }
+            WorkspaceMutation::SpaceDelete { space_id } => {
+                transaction
+                    .execute("DELETE FROM spaces WHERE id = ?1", [space_id])
+                    .map_err(|error| format!("Unable to delete space '{space_id}': {error}"))?;
+            }
+            WorkspaceMutation::NodeUpsert { space_id, node, order_index } => {
+                transaction
+                    .execute(
+                        "INSERT INTO nodes (id, space_id, label, order_index, position_x, position_y, category, color)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                         ON CONFLICT(id) DO UPDATE SET
+                           space_id = excluded.space_id,
+                           label = excluded.label,
+                           order_index = excluded.order_index,
+                           position_x = excluded.position_x,
+                           position_y = excluded.position_y,
+                           category = excluded.category,
+                           color = excluded.color",
+                        params![
+                            node.id,
+                            space_id,
+                            node.data.label,
+                            order_index,
+                            node.position.x,
+                            node.position.y,
+                            node.data.category,
+                            node.data.color
+                        ],
+                    )
+                    .map_err(|error| format!("Unable to upsert node '{}': {error}", node.id))?;
+            }
+            WorkspaceMutation::NodeDelete { node_id } => {
+                transaction
+                    .execute("DELETE FROM edges WHERE source = ?1 OR target = ?1", [node_id])
+                    .map_err(|error| format!("Unable to delete links for node '{node_id}': {error}"))?;
+                transaction
+                    .execute("DELETE FROM nodes WHERE id = ?1", [node_id])
+                    .map_err(|error| format!("Unable to delete node '{node_id}': {error}"))?;
+            }
+            WorkspaceMutation::EdgeUpsert { space_id, edge, order_index } => {
+                transaction
+                    .execute(
+                        "INSERT INTO edges (id, space_id, source, target, order_index)
+                         VALUES (?1, ?2, ?3, ?4, ?5)
+                         ON CONFLICT(id) DO UPDATE SET
+                           space_id = excluded.space_id,
+                           source = excluded.source,
+                           target = excluded.target,
+                           order_index = excluded.order_index",
+                        params![edge.id, space_id, edge.source, edge.target, order_index],
+                    )
+                    .map_err(|error| format!("Unable to upsert edge '{}': {error}", edge.id))?;
+            }
+            WorkspaceMutation::EdgeDelete { edge_id } => {
+                transaction
+                    .execute("DELETE FROM edges WHERE id = ?1", [edge_id])
+                    .map_err(|error| format!("Unable to delete edge '{edge_id}': {error}"))?;
+            }
+            WorkspaceMutation::TodoUpsert { space_id, todo, order_index } => {
+                transaction
+                    .execute(
+                        "INSERT INTO todos (
+                          id, space_id, text, completed, order_index, created_at, updated_at, priority, due_date
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                         ON CONFLICT(id) DO UPDATE SET
+                           space_id = excluded.space_id,
+                           text = excluded.text,
+                           completed = excluded.completed,
+                           order_index = excluded.order_index,
+                           created_at = excluded.created_at,
+                           updated_at = excluded.updated_at,
+                           priority = excluded.priority,
+                           due_date = excluded.due_date",
+                        params![
+                            todo.id,
+                            space_id,
+                            todo.text,
+                            if todo.completed { 1 } else { 0 },
+                            order_index,
+                            todo.created_at,
+                            todo.updated_at,
+                            todo.priority,
+                            todo.due_date
+                        ],
+                    )
+                    .map_err(|error| format!("Unable to upsert todo '{}': {error}", todo.id))?;
+            }
+            WorkspaceMutation::TodoDelete { todo_id } => {
+                transaction
+                    .execute("DELETE FROM todos WHERE id = ?1", [todo_id])
+                    .map_err(|error| format!("Unable to delete todo '{todo_id}': {error}"))?;
+            }
+        }
+    }
+
+    let dangling_edges: i64 = transaction
+        .query_row(
+            "SELECT COUNT(*)
+             FROM edges e
+             LEFT JOIN nodes source ON source.id = e.source AND source.space_id = e.space_id
+             LEFT JOIN nodes target ON target.id = e.target AND target.space_id = e.space_id
+             WHERE source.id IS NULL OR target.id IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("Unable to validate edge endpoints: {error}"))?;
+    if dangling_edges > 0 {
+        return Err(format!("Mutation batch would leave {dangling_edges} dangling edge(s)."));
+    }
+
+    if let Some(active_space_id) = load_setting(&transaction, "activeSpaceId")? {
+        let active_exists: i64 = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM spaces WHERE id = ?1)",
+                [active_space_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("Unable to validate active space: {error}"))?;
+        if active_exists == 0 {
+            return Err("Mutation batch references an active space that does not exist.".to_string());
+        }
+    }
+
+    upsert_setting(&transaction, "storageRevision", &batch.next_revision.to_string())?;
+    transaction
+        .commit()
+        .map_err(|error| format!("Unable to commit SQLite mutation transaction: {error}"))?;
+
+    Ok(SaveResult { revision: batch.next_revision })
+}
+
 #[tauri::command]
 fn load_snapshot(app: AppHandle) -> Result<AppSnapshot, String> {
     let connection = open_connection(&app)?;
@@ -542,6 +930,32 @@ fn load_snapshot(app: AppHandle) -> Result<AppSnapshot, String> {
 fn save_snapshot(app: AppHandle, snapshot: AppSnapshot) -> Result<(), String> {
     let mut connection = open_connection(&app)?;
     save_snapshot_to_connection(&mut connection, &snapshot)
+}
+
+#[tauri::command]
+fn load_workspace(app: AppHandle) -> Result<LoadedWorkspace, String> {
+    let connection = open_connection(&app)?;
+    load_workspace_from_connection(&connection)
+}
+
+#[tauri::command]
+fn apply_mutations(app: AppHandle, batch: MutationBatch) -> Result<SaveResult, String> {
+    let mut connection = open_connection(&app)?;
+    apply_mutations_to_connection(&mut connection, &batch)
+}
+
+#[tauri::command]
+fn replace_workspace(app: AppHandle, snapshot: AppSnapshot, revision: i64) -> Result<SaveResult, String> {
+    let mut connection = open_connection(&app)?;
+    let current_revision = load_storage_revision(&connection)?;
+    if revision != current_revision + 1 {
+        return Err(format!(
+            "SQLite revision conflict while replacing workspace: expected {}, received {revision}.",
+            current_revision + 1
+        ));
+    }
+    replace_snapshot_to_connection(&mut connection, &snapshot, revision)?;
+    Ok(SaveResult { revision })
 }
 
 fn smoke_report_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -565,6 +979,8 @@ fn smoke_snapshot() -> AppSnapshot {
                 position: BrainNodePosition { x: 120.0, y: 180.0 },
                 data: BrainNodeData {
                     label: "Smoke".to_string(),
+                    category: None,
+                    color: None,
                 },
             }],
             edges: vec![],
@@ -574,6 +990,8 @@ fn smoke_snapshot() -> AppSnapshot {
                 completed: false,
                 created_at: "2026-01-01T00:00:00.000Z".to_string(),
                 updated_at: "2026-01-01T00:00:00.000Z".to_string(),
+                priority: None,
+                due_date: None,
             }],
             viewport: ViewportState {
                 x: 0.0,
@@ -641,6 +1059,8 @@ mod tests {
                         position: BrainNodePosition { x: 120.0, y: 180.0 },
                         data: BrainNodeData {
                             label: "Why".to_string(),
+                            category: Some("reason".to_string()),
+                            color: Some("blue".to_string()),
                         },
                     },
                     BrainNode {
@@ -648,6 +1068,8 @@ mod tests {
                         position: BrainNodePosition { x: 340.0, y: 240.0 },
                         data: BrainNodeData {
                             label: "Because".to_string(),
+                            category: None,
+                            color: None,
                         },
                     },
                 ],
@@ -663,6 +1085,8 @@ mod tests {
                         completed: false,
                         created_at: "2026-01-01T00:00:00.000Z".to_string(),
                         updated_at: "2026-01-01T00:00:00.000Z".to_string(),
+                        priority: Some("high".to_string()),
+                        due_date: Some("2026-01-05".to_string()),
                     },
                     TodoItem {
                         id: "todo-2".to_string(),
@@ -670,6 +1094,8 @@ mod tests {
                         completed: true,
                         created_at: "2026-01-02T00:00:00.000Z".to_string(),
                         updated_at: "2026-01-02T00:00:00.000Z".to_string(),
+                        priority: None,
+                        due_date: None,
                     },
                 ],
                 viewport: ViewportState {
@@ -698,6 +1124,8 @@ mod tests {
                     position: BrainNodePosition { x: 40.0, y: 80.0 },
                     data: BrainNodeData {
                         label: "Focus".to_string(),
+                        category: None,
+                        color: None,
                     },
                 }],
                 edges: vec![],
@@ -707,6 +1135,8 @@ mod tests {
                     completed: false,
                     created_at: "2026-02-01T00:00:00.000Z".to_string(),
                     updated_at: "2026-02-01T00:00:00.000Z".to_string(),
+                    priority: None,
+                    due_date: None,
                 }],
                 viewport: ViewportState {
                     x: -20.0,
@@ -824,12 +1254,11 @@ mod tests {
             .execute_batch(MIGRATION_1_SQL)
             .expect("initialize legacy schema");
 
+        assert_eq!(load_schema_version(&connection).expect("schema version before migration"), 0);
+        run_migrations(&connection).expect("migrate legacy schema");
+
         let snapshot = make_snapshot();
         save_snapshot_to_connection(&mut connection, &snapshot).expect("save legacy snapshot");
-
-        assert_eq!(load_schema_version(&connection).expect("schema version before migration"), 0);
-
-        run_migrations(&connection).expect("migrate legacy schema");
         let loaded = load_snapshot_from_connection(&connection).expect("load migrated snapshot");
 
         assert_eq!(
@@ -850,6 +1279,87 @@ mod tests {
             error.contains("newer than this build supports"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn migrates_v1_schema_to_latest_with_revision_indexes_and_advanced_fields() {
+        let connection = Connection::open_in_memory().expect("in-memory sqlite");
+        configure_connection(&connection).expect("configure connection");
+        connection.execute_batch(MIGRATION_1_SQL).expect("initialize v1 schema");
+
+        assert_eq!(load_schema_version(&connection).expect("schema version"), 0);
+        run_migrations(&connection).expect("migrate schema");
+
+        assert_eq!(load_schema_version(&connection).expect("schema version"), LATEST_SCHEMA_VERSION);
+        assert_eq!(load_storage_revision(&connection).expect("storage revision"), 0);
+        for index in ["idx_nodes_space_order", "idx_edges_space_order", "idx_todos_space_order"] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+                    [index],
+                    |row| row.get(0),
+                )
+                .expect("index lookup");
+            assert_eq!(count, 1, "missing index {index}");
+        }
+        for (table, column) in [
+            ("nodes", "category"),
+            ("nodes", "color"),
+            ("todos", "priority"),
+            ("todos", "due_date"),
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+                    params![table, column],
+                    |row| row.get(0),
+                )
+                .expect("column lookup");
+            assert_eq!(count, 1, "missing column {table}.{column}");
+        }
+    }
+
+    #[test]
+    fn applies_incremental_mutations_and_rejects_stale_revision() {
+        let mut connection = open_test_connection();
+        let original = make_snapshot();
+        save_snapshot_to_connection(&mut connection, &original).expect("save original");
+
+        let batch = MutationBatch {
+            expected_revision: 0,
+            next_revision: 1,
+            mutations: vec![
+                WorkspaceMutation::NodeUpsert {
+                    space_id: "space-1".to_string(),
+                    node: BrainNode {
+                        id: "node-a".to_string(),
+                        position: BrainNodePosition { x: 999.0, y: 888.0 },
+                        data: BrainNodeData { label: "Updated".to_string(), category: Some("action".to_string()), color: Some("green".to_string()) },
+                    },
+                    order_index: 0,
+                },
+                WorkspaceMutation::SettingsPatch {
+                    settings: PersistedSettings {
+                        locale: "en".to_string(),
+                        theme: "dark".to_string(),
+                        active_space_id: Some("space-1".to_string()),
+                        last_opened_at: "later".to_string(),
+                        has_seen_tutorial: true,
+                    },
+                },
+            ],
+        };
+
+        let result = apply_mutations_to_connection(&mut connection, &batch).expect("apply mutations");
+        assert_eq!(result.revision, 1);
+        let loaded = load_workspace_from_connection(&connection).expect("load workspace");
+        assert_eq!(loaded.revision, 1);
+        assert_eq!(loaded.snapshot.spaces[0].nodes[0].data.label, "Updated");
+        assert_eq!(loaded.snapshot.theme, "dark");
+
+        let stale = MutationBatch { expected_revision: 0, next_revision: 1, mutations: vec![] };
+        let error = apply_mutations_to_connection(&mut connection, &stale).expect_err("stale revision");
+        assert!(error.contains("revision conflict"));
     }
 }
 
@@ -921,7 +1431,13 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![load_snapshot, save_snapshot])
+        .invoke_handler(tauri::generate_handler![
+            load_snapshot,
+            save_snapshot,
+            load_workspace,
+            apply_mutations,
+            replace_workspace
+        ])
         .run(context)
         .expect("error while running Whybrary");
 }

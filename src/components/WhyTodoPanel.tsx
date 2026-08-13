@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { memo, useMemo, useRef, useState, type FormEvent } from 'react';
 import { getCopy } from '../lib/i18n';
-import type { AppLocale, Space } from '../types';
+import type { AppLocale, TodoItem, TodoPriority } from '../types';
 import { FloatingActions } from './FloatingActions';
 
 type WhyTodoPanelProps = {
@@ -8,29 +8,33 @@ type WhyTodoPanelProps = {
   locale: AppLocale;
   isExpanded?: boolean;
   onToggleExpanded?: () => void;
-  space: Space;
+  todos: TodoItem[];
   onAddTodo: (text: string) => void;
   onChangeTodoText: (todoId: string, nextText: string) => void;
   onDeleteTodo: (todoId: string) => void;
   onToggleTodo: (todoId: string) => void;
+  advancedEnabled?: boolean;
+  onTodoMetadataChange?: (todoId: string, priority?: TodoPriority, dueDate?: string | null) => void;
 };
 
-export function WhyTodoPanel({
+export const WhyTodoPanel = memo(function WhyTodoPanel({
   isMobile = false,
   locale,
   isExpanded = false,
   onToggleExpanded,
-  space,
+  todos,
   onAddTodo,
   onChangeTodoText,
   onDeleteTodo,
   onToggleTodo,
+  advancedEnabled = false,
+  onTodoMetadataChange,
 }: WhyTodoPanelProps) {
   const copy = getCopy(locale);
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const openTodos = useMemo(() => space.todos.filter((todo) => !todo.completed), [space.todos]);
+  const openTodos = useMemo(() => todos.filter((todo) => !todo.completed), [todos]);
 
   const canScrollWithinList = () => {
     const list = listRef.current;
@@ -177,7 +181,7 @@ export function WhyTodoPanel({
 
       <div className="todo-surface">
         <div className="todo-list" ref={listRef}>
-          {space.todos.map((todo) => (
+          {todos.map((todo) => (
             <div
               className={`todo-item ${todo.completed ? 'is-completed' : ''}`}
               key={todo.id}
@@ -204,6 +208,42 @@ export function WhyTodoPanel({
                   type="text"
                   value={todo.text}
                 />
+                {advancedEnabled ? (
+                  <div className="todo-advanced-fields">
+                    <label>
+                      <span>{copy.advanced.priority}</span>
+                      <select
+                        aria-label={`${copy.advanced.priority}: ${todo.text}`}
+                        onChange={(event) =>
+                          onTodoMetadataChange?.(
+                            todo.id,
+                            (event.target.value || undefined) as TodoPriority | undefined,
+                            todo.dueDate,
+                          )
+                        }
+                        value={todo.priority ?? ''}
+                      >
+                        <option value="">{copy.advanced.none}</option>
+                        {(['low', 'medium', 'high'] as const).map((value) => (
+                          <option key={value} value={value}>
+                            {copy.advanced.priorities[value]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>{copy.advanced.dueDate}</span>
+                      <input
+                        aria-label={`${copy.advanced.dueDate}: ${todo.text}`}
+                        onChange={(event) =>
+                          onTodoMetadataChange?.(todo.id, todo.priority, event.target.value || null)
+                        }
+                        type="date"
+                        value={todo.dueDate ?? ''}
+                      />
+                    </label>
+                  </div>
+                ) : null}
               </div>
 
               <button
@@ -225,7 +265,7 @@ export function WhyTodoPanel({
               label: copy.todo.dockTop,
               title: copy.todo.dockTopTitle,
               onPress: scrollToTop,
-              disabled: space.todos.length === 0,
+              disabled: todos.length === 0,
             },
             {
               id: 'first-open',
@@ -249,6 +289,6 @@ export function WhyTodoPanel({
       </div>
     </section>
   );
-}
+});
 // SPDX-FileCopyrightText: 2026 Zw-awa
 // SPDX-License-Identifier: MIT

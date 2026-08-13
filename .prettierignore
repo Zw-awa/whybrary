@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+src-tauri
+package-lock.json
+.gradle-android-user-home
+.kotlin-daemon
+.tmp

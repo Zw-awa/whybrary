@@ -1,4 +1,5 @@
-import { type AppLocale, type Space, type ThemeMode } from '../types';
+import { memo } from 'react';
+import type { AppLocale, Space, ThemeMode } from '../types';
 import { getCopy } from '../lib/i18n';
 
 type SpaceSidebarProps = {
@@ -20,9 +21,13 @@ type SpaceSidebarProps = {
   onRenameActiveSpace: (nextName: string) => void;
   onDeleteActiveSpace: () => void;
   onToggleTheme: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 };
 
-export function SpaceSidebar({
+export const SpaceSidebar = memo(function SpaceSidebar({
   spaces,
   activeSpaceId,
   activeSpaceName,
@@ -41,6 +46,10 @@ export function SpaceSidebar({
   onRenameActiveSpace,
   onDeleteActiveSpace,
   onToggleTheme,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }: SpaceSidebarProps) {
   const copy = getCopy(locale);
 
@@ -65,6 +74,24 @@ export function SpaceSidebar({
       </div>
 
       <div className="sidebar__controls">
+        <div className="sidebar__history-controls">
+          <button
+            className="button button--ghost"
+            disabled={!canUndo}
+            onClick={onUndo}
+            type="button"
+          >
+            {copy.sidebar.undo}
+          </button>
+          <button
+            className="button button--ghost"
+            disabled={!canRedo}
+            onClick={onRedo}
+            type="button"
+          >
+            {copy.sidebar.redo}
+          </button>
+        </div>
         <button className="button button--accent" onClick={onCreateSpace} type="button">
           {copy.sidebar.newSpace}
         </button>
@@ -131,6 +158,6 @@ export function SpaceSidebar({
       </section>
     </aside>
   );
-}
+});
 // SPDX-FileCopyrightText: 2026 Zw-awa
 // SPDX-License-Identifier: MIT

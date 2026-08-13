@@ -9,44 +9,74 @@ const { loadSnapshotMock, saveSnapshotMock, clearPreviewSnapshotMock } = vi.hois
   clearPreviewSnapshotMock: vi.fn(),
 }));
 
-vi.mock('./lib/persistence', () => ({
-  loadSnapshot: loadSnapshotMock,
-  saveSnapshot: saveSnapshotMock,
-  clearPreviewSnapshot: clearPreviewSnapshotMock,
-}));
+vi.mock('./lib/persistence', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./lib/persistence')>();
+  return {
+    ...actual,
+    loadWorkspace: async () => ({ snapshot: await loadSnapshotMock(), revision: 0 }),
+    applyMutationBatch: async (batch: { nextRevision: number }, snapshot: AppSnapshot) => {
+      await saveSnapshotMock(snapshot);
+      return batch.nextRevision;
+    },
+    replaceWorkspace: async (_snapshot: AppSnapshot, revision: number) => revision,
+    clearPreviewSnapshot: clearPreviewSnapshotMock,
+  };
+});
 
 vi.mock('./components/BrainCanvas', () => ({
-  BrainCanvas: ({ onAddNeuron, onDeleteNodes, onInfoOpenChange, onToggleEditMode, onToggleExpanded, space }: {
+  BrainCanvas: ({
+    onAddNeuron,
+    onDeleteNodes,
+    onInfoOpenChange,
+    onToggleEditMode,
+    onToggleExpanded,
+    edges,
+    nodes,
+  }: {
     onAddNeuron?: () => unknown;
     onDeleteNodes: (nodeIds: string[]) => void;
     onInfoOpenChange?: (open: boolean) => void;
     onToggleEditMode?: () => void;
     onToggleExpanded?: () => void;
-    space: AppSnapshot['spaces'][number];
+    edges: AppSnapshot['spaces'][number]['edges'];
+    nodes: AppSnapshot['spaces'][number]['nodes'];
   }) => (
     <section data-testid="brain-canvas-mock">
       <div>
-        {space.nodes.length} nodes / {space.edges.length} edges
+        {nodes.length} nodes / {edges.length} edges
       </div>
       <button onClick={() => onDeleteNodes(['node-a'])} type="button">
         Delete Node A
       </button>
-      <button onClick={() => onInfoOpenChange?.(true)} type="button">Mock Open Info</button>
-      <button onClick={onToggleExpanded} type="button">Mock Expand Map</button>
-      <button data-tour-id="edit-map" onClick={onToggleEditMode} type="button">Mock Edit Map</button>
-      <button data-tour-id="add-node" onClick={onAddNeuron} type="button">Mock Add Node</button>
+      <button onClick={() => onInfoOpenChange?.(true)} type="button">
+        Mock Open Info
+      </button>
+      <button onClick={onToggleExpanded} type="button">
+        Mock Expand Map
+      </button>
+      <button data-tour-id="edit-map" onClick={onToggleEditMode} type="button">
+        Mock Edit Map
+      </button>
+      <button data-tour-id="add-node" onClick={onAddNeuron} type="button">
+        Mock Add Node
+      </button>
     </section>
   ),
 }));
 
 vi.mock('./components/WhyTodoPanel', () => ({
-  WhyTodoPanel: ({ onToggleExpanded, space }: {
+  WhyTodoPanel: ({
+    onToggleExpanded,
+    todos,
+  }: {
     onToggleExpanded?: () => void;
-    space: AppSnapshot['spaces'][number];
+    todos: AppSnapshot['spaces'][number]['todos'];
   }) => (
     <section data-testid="todo-panel-mock">
-      {space.todos.length} todos
-      <button onClick={onToggleExpanded} type="button">Mock Expand Todo</button>
+      {todos.length} todos
+      <button onClick={onToggleExpanded} type="button">
+        Mock Expand Todo
+      </button>
     </section>
   ),
 }));
@@ -232,27 +262,61 @@ describe('App integration', () => {
     expect(screen.getByRole('button', { name: 'New Space' })).toBeTruthy();
   });
 
-  it('falls back to the default state when snapshot loading fails', async () => {
+  it('shows a non-destructive load error when snapshot loading fails', async () => {
     loadSnapshotMock.mockRejectedValue(new Error('load failed'));
 
     render(<App />);
 
+    expect(await screen.findByRole('heading', { name: 'Unable to open local data' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Start Fresh' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Start Fresh' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Tutorial Example' })).toBeTruthy();
-    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(screen.getByRole('button', { name: /My First Space/ })).toBeTruthy();
   });
 
   it('toggles theme and persists the updated snapshot', async () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });
 
-    await waitFor(() => expect(saveSnapshotMock).toHaveBeenCalledTimes(1), { timeout: 1200 });
-    saveSnapshotMock.mockClear();
+    expect(saveSnapshotMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Use Light Theme' }));
 
     expect(document.documentElement.dataset.theme).toBe('light');
     await waitFor(() => expect(saveSnapshotMock).toHaveBeenCalledTimes(1), { timeout: 1200 });
     expect((saveSnapshotMock.mock.calls[0]?.[0] as AppSnapshot).theme).toBe('light');
+  });
+
+  it('undoes and redoes workspace changes', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+    fireEvent.click(screen.getByRole('button', { name: 'New Space' }));
+    expect(screen.getByRole('heading', { name: 'Space 2' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByRole('heading', { name: 'Loaded Space' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(screen.getByRole('heading', { name: 'Space 2' })).toBeTruthy();
+  });
+
+  it('can follow the system theme from settings', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'System' }));
+    expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('keeps advanced fields opt-in and remembers the preference', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+    expect(window.localStorage.getItem('whybrary.ui.advancedFeatures')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    const toggle = screen.getByRole('checkbox', { name: 'Show advanced fields' });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(toggle);
+    expect(window.localStorage.getItem('whybrary.ui.advancedFeatures')).toBe('true');
   });
 
   it('exports the current snapshot as json', async () => {
@@ -264,7 +328,9 @@ describe('App integration', () => {
 
     const createObjectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:whybrary');
     const revokeObjectUrlSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
 
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });
@@ -332,6 +398,11 @@ describe('App integration', () => {
   it('starts the guided tutorial in an isolated example space', async () => {
     loadSnapshotMock.mockResolvedValue(makeSnapshot(false));
     render(<App />);
+    expect(await screen.findByRole('dialog', { name: 'Choose your language' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '简体中文' }));
+    expect(screen.getByRole('button', { name: '继续' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'English' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await screen.findByRole('heading', { name: 'Tutorial Example' });
 
     expect(screen.getByRole('dialog', { name: 'Guided tutorial' })).toBeTruthy();
@@ -348,6 +419,7 @@ describe('App integration', () => {
   it('places the tutorial exit confirmation above the tutorial overlay', async () => {
     loadSnapshotMock.mockResolvedValue(makeSnapshot(false));
     render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     await screen.findByRole('heading', { name: 'Tutorial Example' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
@@ -397,8 +469,7 @@ describe('App integration', () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });
 
-    await waitFor(() => expect(saveSnapshotMock).toHaveBeenCalledTimes(1), { timeout: 1200 });
-    saveSnapshotMock.mockClear();
+    expect(saveSnapshotMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'New Space' }));
     expect(screen.getByRole('heading', { name: 'Space 2' })).toBeTruthy();
@@ -431,8 +502,7 @@ describe('App integration', () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });
 
-    await waitFor(() => expect(saveSnapshotMock).toHaveBeenCalledTimes(1), { timeout: 1200 });
-    saveSnapshotMock.mockClear();
+    expect(saveSnapshotMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete Node A' }));
     await waitFor(() => expect(saveSnapshotMock).toHaveBeenCalledTimes(1), { timeout: 1200 });

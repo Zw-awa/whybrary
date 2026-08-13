@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getCopy } from '../lib/i18n';
 import { buildSimNodes, findSpawnPosition, type SimNode } from '../lib/brainPhysics';
-import type { AppLocale, BrainNode, Space } from '../types';
+import type { AppLocale, BrainEdge, BrainNode, NodeCategory, NodeColor, Space } from '../types';
 import { BrainEdgeLayer } from './BrainEdgeLayer';
 import { BrainInfoPanel } from './BrainInfoPanel';
 import { BrainNodeLayer } from './BrainNodeLayer';
@@ -31,7 +31,11 @@ type BrainCanvasProps = {
   onViewportChange: (viewport: Space['viewport']) => void;
   onToggleExpanded?: () => void;
   onInfoOpenChange?: (open: boolean) => void;
-  space: Space;
+  edges: BrainEdge[];
+  nodes: BrainNode[];
+  viewport: Space['viewport'];
+  advancedEnabled?: boolean;
+  onNodeMetadataChange?: (nodeId: string, category?: NodeCategory, color?: NodeColor) => void;
 };
 
 function appendTransientNode(current: SimNode[], nextNode: BrainNode): SimNode[] {
@@ -72,15 +76,24 @@ export function BrainCanvas({
   onViewportChange,
   onToggleExpanded,
   onInfoOpenChange,
-  space,
+  edges,
+  nodes,
+  viewport,
+  advancedEnabled = false,
+  onNodeMetadataChange,
 }: BrainCanvasProps) {
   const copy = getCopy(locale);
   const [internalInfoOpen, setInternalInfoOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const shellRef = useRef<HTMLDivElement>(null);
-  const simNodesRef = useRef<SimNode[]>(buildSimNodes(space));
+  const simulationSpace = useMemo(
+    () => ({ id: 'graph', nodes, edges, viewport }) as Space,
+    [edges, nodes, viewport],
+  );
+  const simNodesRef = useRef<SimNode[]>(buildSimNodes(simulationSpace));
   const selectionNodeLabels = useMemo(
-    () => space.nodes.map((node) => ({ id: node.id, label: node.data.label })),
-    [space.nodes],
+    () => nodes.map((node) => ({ id: node.id, label: node.data.label })),
+    [nodes],
   );
   const {
     clearTrackedNode,
@@ -88,6 +101,7 @@ export function BrainCanvas({
     effectiveViewport,
     handleBackgroundPointerDown,
     handleWheel,
+    fitToNodes,
     isPanning,
     setTrackedNodeId,
     trackedNodeId,
@@ -95,7 +109,7 @@ export function BrainCanvas({
     nodes: simNodesRef.current,
     onViewportChange,
     shellRef,
-    viewport: space.viewport,
+    viewport,
   });
   const {
     clearSelection,
@@ -133,15 +147,29 @@ export function BrainCanvas({
     onSelectNode: setSelectedNodeId,
     shellRef,
     simNodesRef,
-    space,
+    space: simulationSpace,
   });
   const { nodeById, setSimNodes, simNodes } = useBrainSimulation({
     dragPointerRef,
     dragStateRef,
     shellRef,
     simNodesRef,
-    space,
+    space: simulationSpace,
   });
+  const normalizedQuery = query.trim().toLocaleLowerCase(locale);
+  const visibleNodes = useMemo(
+    () =>
+      simNodes.filter(
+        (node) =>
+          !normalizedQuery || node.label.toLocaleLowerCase(locale).includes(normalizedQuery),
+      ),
+    [locale, normalizedQuery, simNodes],
+  );
+  const visibleIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
+  const visibleEdges = useMemo(
+    () => edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)),
+    [edges, visibleIds],
+  );
   const isInfoOpen = controlledInfoOpen ?? internalInfoOpen;
   const setInfoOpen = (open: boolean) => {
     if (controlledInfoOpen === undefined) {
@@ -158,6 +186,9 @@ export function BrainCanvas({
   const selectedNodeLabel =
     selectionNodeLabels.find((node) => node.id === selectedNodeId)?.label || copy.map.untitled;
   const selectedSimNode = selectedNodeId ? nodeById.get(selectedNodeId) : undefined;
+  const selectedSourceNode = selectedNodeId
+    ? nodes.find((node) => node.id === selectedNodeId)
+    : undefined;
   const selectedScreenPosition = selectedSimNode
     ? {
         x: selectedSimNode.x * effectiveViewport.zoom + effectiveViewport.x,
@@ -203,10 +234,7 @@ export function BrainCanvas({
     </button>
   );
 
-  const withNodeClick = (
-    event: React.MouseEvent<HTMLButtonElement>,
-    nodeId: string,
-  ) => {
+  const withNodeClick = (event: React.MouseEvent<HTMLButtonElement>, nodeId: string) => {
     event.stopPropagation();
 
     if (consumeSuppressedClick()) {
@@ -218,8 +246,25 @@ export function BrainCanvas({
 
   return (
     <section className="panel panel--graph">
-      <div className="panel__header">
+      <div className="panel__header panel__header--graph">
         <h2>{copy.map.title}</h2>
+        <div className="graph-search">
+          <input
+            aria-label={copy.map.searchPlaceholder}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={copy.map.searchPlaceholder}
+            type="search"
+            value={query}
+          />
+          {query ? (
+            <button aria-label={copy.map.clearSearch} onClick={() => setQuery('')} type="button">
+              ×
+            </button>
+          ) : null}
+        </div>
+        <button className="button panel__fit" onClick={fitToNodes} type="button">
+          {copy.map.fitToNodes}
+        </button>
         {onToggleExpanded ? (
           <button className="button panel__expand" onClick={onToggleExpanded} type="button">
             {isExpanded ? copy.map.restorePanel : copy.map.expandPanel}
@@ -227,14 +272,15 @@ export function BrainCanvas({
         ) : null}
         {!isMobile ? (
           <div className="panel__actions">
-            <button
-              className="button"
-              onClick={() => setInfoOpen(!isInfoOpen)}
-              type="button"
-            >
+            <button className="button" onClick={() => setInfoOpen(!isInfoOpen)} type="button">
               {isInfoOpen ? copy.map.hideInfo : copy.map.showInfo}
             </button>
-            <button className="button button--ghost" data-tour-id="edit-map" onClick={onToggleEditMode} type="button">
+            <button
+              className="button button--ghost"
+              data-tour-id="edit-map"
+              onClick={onToggleEditMode}
+              type="button"
+            >
               {isEditMode ? copy.map.done : copy.map.editContent}
             </button>
             {isEditMode ? (
@@ -250,7 +296,9 @@ export function BrainCanvas({
             {isEditMode ? renderAddNodeAction() : null}
           </div>
         ) : (
-          <div className="graph-mode-pill">{isEditMode ? copy.map.editingEnabled : copy.map.viewingMode}</div>
+          <div className="graph-mode-pill">
+            {isEditMode ? copy.map.editingEnabled : copy.map.viewingMode}
+          </div>
         )}
       </div>
 
@@ -266,36 +314,38 @@ export function BrainCanvas({
         onPointerDown={handleBackgroundPointerDown}
         ref={shellRef}
       >
-        {isInfoOpen ? (() => {
-          const panel = (
-          <BrainInfoPanel
-            edgesCount={space.edges.length}
-            infoSelection={infoSelection}
-            isMobile={isMobile}
-            isRail={Boolean(infoPortalTarget && !isMobile)}
-            isMultiSelect={isInfoMultiSelect}
-            locale={locale}
-            nodes={simNodes}
-            onClose={() => setInfoOpen(false)}
-            onClearSelection={clearSelection}
-            onDeleteSelection={deleteInfoSelection}
-            onNodeClick={handleInfoNodeClick}
-            onSelectAll={() => setInfoSelection(simNodes.map((node) => node.id))}
-            onToggleMultiSelect={toggleMultiSelect}
-            trackedNodeId={trackedNodeId}
-          />
-          );
-          return infoPortalTarget && !isMobile ? createPortal(panel, infoPortalTarget) : panel;
-        })() : null}
+        {isInfoOpen
+          ? (() => {
+              const panel = (
+                <BrainInfoPanel
+                  edgesCount={edges.length}
+                  infoSelection={infoSelection}
+                  isMobile={isMobile}
+                  isRail={Boolean(infoPortalTarget && !isMobile)}
+                  isMultiSelect={isInfoMultiSelect}
+                  locale={locale}
+                  nodes={simNodes}
+                  onClose={() => setInfoOpen(false)}
+                  onClearSelection={clearSelection}
+                  onDeleteSelection={deleteInfoSelection}
+                  onNodeClick={handleInfoNodeClick}
+                  onSelectAll={() => setInfoSelection(simNodes.map((node) => node.id))}
+                  onToggleMultiSelect={toggleMultiSelect}
+                  trackedNodeId={trackedNodeId}
+                />
+              );
+              return infoPortalTarget && !isMobile ? createPortal(panel, infoPortalTarget) : panel;
+            })()
+          : null}
 
-        <BrainEdgeLayer edges={space.edges} nodeById={nodeById} viewport={effectiveViewport} />
+        <BrainEdgeLayer edges={visibleEdges} nodeById={nodeById} viewport={effectiveViewport} />
 
         <BrainNodeLayer
           editingNodeId={editingNodeId}
           isEditMode={isEditMode}
           isMobile={isMobile}
           locale={locale}
-          nodes={simNodes}
+          nodes={visibleNodes}
           onDotClick={withNodeClick}
           onFinishRenameNode={onFinishRenameNode}
           onLabelClick={withNodeClick}
@@ -314,7 +364,7 @@ export function BrainCanvas({
           }}
           onStartRenameNode={onStartRenameNode}
           selectedNodeId={selectedNodeId}
-          spaceNodes={space.nodes}
+          spaceNodes={nodes}
           viewport={effectiveViewport}
         />
 
@@ -323,11 +373,16 @@ export function BrainCanvas({
             className={`node-context-toolbar ${selectedScreenPosition.y < 96 ? 'is-below' : ''}`}
             onPointerDown={(event) => event.stopPropagation()}
             style={{
-              left: Math.min(Math.max(116, selectedScreenPosition.x), Math.max(116, (shellRef.current?.clientWidth ?? 800) - 116)),
+              left: Math.min(
+                Math.max(116, selectedScreenPosition.x),
+                Math.max(116, (shellRef.current?.clientWidth ?? 800) - 116),
+              ),
               top: selectedScreenPosition.y,
             }}
           >
-            <button onClick={() => onStartRenameNode(selectedNodeId)} type="button">{copy.map.rename}</button>
+            <button onClick={() => onStartRenameNode(selectedNodeId)} type="button">
+              {copy.map.rename}
+            </button>
             <button
               className={isConnectMode ? 'is-active' : ''}
               onClick={() => startConnectFromNode(selectedNodeId)}
@@ -335,7 +390,60 @@ export function BrainCanvas({
             >
               {copy.map.link}
             </button>
-            <button className="is-danger" data-tour-id="node-delete" onClick={requestSelectedNodeDeletion} type="button">{copy.map.delete}</button>
+            <button
+              className="is-danger"
+              data-tour-id="node-delete"
+              onClick={requestSelectedNodeDeletion}
+              type="button"
+            >
+              {copy.map.delete}
+            </button>
+          </div>
+        ) : null}
+
+        {advancedEnabled && isEditMode && selectedNodeId && selectedSourceNode ? (
+          <div className="node-advanced-editor" onPointerDown={(event) => event.stopPropagation()}>
+            <label>
+              <span>{copy.advanced.category}</span>
+              <select
+                aria-label={copy.advanced.category}
+                onChange={(event) =>
+                  onNodeMetadataChange?.(
+                    selectedNodeId,
+                    (event.target.value || undefined) as NodeCategory | undefined,
+                    selectedSourceNode.data.color,
+                  )
+                }
+                value={selectedSourceNode.data.category ?? ''}
+              >
+                <option value="">{copy.advanced.noCategory}</option>
+                {(['idea', 'reason', 'question', 'action'] as const).map((value) => (
+                  <option key={value} value={value}>
+                    {copy.advanced.categories[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{copy.advanced.color}</span>
+              <select
+                aria-label={copy.advanced.color}
+                onChange={(event) =>
+                  onNodeMetadataChange?.(
+                    selectedNodeId,
+                    selectedSourceNode.data.category,
+                    event.target.value as NodeColor,
+                  )
+                }
+                value={selectedSourceNode.data.color ?? 'neutral'}
+              >
+                {(['neutral', 'blue', 'green', 'amber', 'red'] as const).map((value) => (
+                  <option key={value} value={value}>
+                    {copy.advanced.colors[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         ) : null}
 
@@ -345,10 +453,18 @@ export function BrainCanvas({
               <div className="graph-selection-bar">
                 <strong>{selectedNodeLabel || copy.map.untitled}</strong>
                 <div className="graph-selection-bar__actions">
-                  <button className="button" onClick={() => onStartRenameNode(selectedNodeId)} type="button">
+                  <button
+                    className="button"
+                    onClick={() => onStartRenameNode(selectedNodeId)}
+                    type="button"
+                  >
                     {copy.map.rename}
                   </button>
-                  <button className="button button--danger" onClick={requestSelectedNodeDeletion} type="button">
+                  <button
+                    className="button button--danger"
+                    onClick={requestSelectedNodeDeletion}
+                    type="button"
+                  >
                     {copy.map.delete}
                   </button>
                   <button className="button" onClick={() => setSelectedNodeId(null)} type="button">
@@ -362,7 +478,12 @@ export function BrainCanvas({
               <button className="button" onClick={() => setInfoOpen(!isInfoOpen)} type="button">
                 {isInfoOpen ? copy.map.hideInfo : copy.map.showInfo}
               </button>
-              <button className="button button--ghost" data-tour-id="edit-map" onClick={onToggleEditMode} type="button">
+              <button
+                className="button button--ghost"
+                data-tour-id="edit-map"
+                onClick={onToggleEditMode}
+                type="button"
+              >
                 {isEditMode ? copy.map.done : copy.map.edit}
               </button>
               {isEditMode ? (

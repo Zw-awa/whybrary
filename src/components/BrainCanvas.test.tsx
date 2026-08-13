@@ -45,7 +45,9 @@ function renderCanvas(overrides?: Partial<React.ComponentProps<typeof BrainCanva
   const onToggleConnection = vi.fn();
   const onViewportChange = vi.fn();
 
+  const space = makeSpace();
   const baseProps: React.ComponentProps<typeof BrainCanvas> = {
+    edges: space.edges,
     editingNodeId: null,
     isEditMode: true,
     locale: 'en',
@@ -58,14 +60,11 @@ function renderCanvas(overrides?: Partial<React.ComponentProps<typeof BrainCanva
     onToggleConnection,
     onToggleEditMode,
     onViewportChange,
-    space: makeSpace(),
+    nodes: space.nodes,
+    viewport: space.viewport,
     ...overrides,
   };
-  const view = render(
-    <BrainCanvas
-      {...baseProps}
-    />,
-  );
+  const view = render(<BrainCanvas {...baseProps} />);
 
   return {
     container: document.body,
@@ -88,10 +87,12 @@ describe('BrainCanvas interactions', () => {
     const user = userEvent.setup();
     renderCanvas();
 
-    expect(screen.queryByDisplayValue('')).toBeNull();
+    expect(document.querySelector('.mind-node__input')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'New Point' }));
 
-    expect(screen.getAllByRole('button', { name: /Untitled|Alpha|Beta/ }).length).toBeGreaterThan(2);
+    expect(screen.getAllByRole('button', { name: /Untitled|Alpha|Beta/ }).length).toBeGreaterThan(
+      2,
+    );
   });
 
   it('tracks a node on info click by default', async () => {
@@ -135,6 +136,25 @@ describe('BrainCanvas interactions', () => {
     expect(onDeleteNodes).toHaveBeenCalledWith(['a']);
   });
 
+  it('filters nodes and related edges without mutating the space', async () => {
+    const user = userEvent.setup();
+    const { onViewportChange } = renderCanvas();
+    await user.type(screen.getByRole('searchbox', { name: 'Filter nodes...' }), 'Alpha');
+    expect(screen.getByRole('button', { name: 'Alpha' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Beta' })).toBeNull();
+    expect(document.querySelectorAll('.mind-edge')).toHaveLength(0);
+    expect(onViewportChange).not.toHaveBeenCalled();
+  });
+
+  it('fits all nodes into the viewport', async () => {
+    const user = userEvent.setup();
+    const { onViewportChange } = renderCanvas();
+    await user.click(screen.getByRole('button', { name: 'Fit all nodes' }));
+    expect(onViewportChange).toHaveBeenCalledWith(
+      expect.objectContaining({ zoom: expect.any(Number) }),
+    );
+  });
+
   it('shows the mobile action bar and node actions when rendered in phone mode', async () => {
     renderCanvas({ isMobile: true });
 
@@ -158,7 +178,10 @@ describe('BrainCanvas interactions', () => {
       .getAllByRole('button', { name: 'Alpha' })
       .find((node) => node.className.includes('mind-node__label')) as HTMLElement;
 
-    fireEvent.pointerDown(alpha.closest('.mind-node') as HTMLElement, { clientX: 100, clientY: 120 });
+    fireEvent.pointerDown(alpha.closest('.mind-node') as HTMLElement, {
+      clientX: 100,
+      clientY: 120,
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     expect(onRequestDeleteNodes).toHaveBeenCalledWith(['a'], ['Alpha']);
@@ -235,10 +258,7 @@ describe('BrainCanvas interactions', () => {
 
   it('clamps zoom-in at the maximum viewport scale', () => {
     const { onViewportChange, container } = renderCanvas({
-      space: {
-        ...makeSpace(),
-        viewport: { x: 0, y: 0, zoom: 1.78 },
-      },
+      viewport: { x: 0, y: 0, zoom: 1.78 },
     });
     const shell = container.querySelector('.graph-shell') as HTMLElement;
 
@@ -253,10 +273,7 @@ describe('BrainCanvas interactions', () => {
 
   it('does not emit a viewport change when already at the minimum zoom', () => {
     const { onViewportChange, container } = renderCanvas({
-      space: {
-        ...makeSpace(),
-        viewport: { x: 0, y: 0, zoom: 0.35 },
-      },
+      viewport: { x: 0, y: 0, zoom: 0.35 },
     });
     const shell = container.querySelector('.graph-shell') as HTMLElement;
 
@@ -386,10 +403,17 @@ describe('BrainCanvas interactions', () => {
     const { onPersistNodePositions } = renderCanvas();
     const alpha = screen
       .getAllByRole('button', { name: /Alpha|Beta/ })
-      .find((node) => node.className.includes('mind-node__label') && node.textContent === 'Alpha') as HTMLElement;
+      .find(
+        (node) => node.className.includes('mind-node__label') && node.textContent === 'Alpha',
+      ) as HTMLElement;
     const nodeContainer = alpha.closest('.mind-node') as HTMLElement;
 
-    fireEvent.pointerDown(nodeContainer, { button: 0, clientX: 100, clientY: 120, isPrimary: true });
+    fireEvent.pointerDown(nodeContainer, {
+      button: 0,
+      clientX: 100,
+      clientY: 120,
+      isPrimary: true,
+    });
     fireEvent.pointerMove(window, { clientX: 180, clientY: 220 });
     fireEvent.pointerUp(window, { clientX: 180, clientY: 220 });
     act(() => {

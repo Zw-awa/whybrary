@@ -71,6 +71,29 @@ describe('persistence', () => {
     setTauriRuntime(false);
   });
 
+  it('loads browser preview data with its revision', async () => {
+    window.localStorage.setItem('whybrary.preview.snapshot', JSON.stringify(previewSnapshot));
+    window.localStorage.setItem('whybrary.preview.revision', '7');
+
+    await expect((await import('./persistence')).loadWorkspace()).resolves.toMatchObject({
+      snapshot: previewSnapshot,
+      revision: 7,
+    });
+  });
+
+  it('does not write a Tauri failure to browser preview storage through the new API', async () => {
+    setTauriRuntime(true);
+    invokeMock.mockRejectedValue(new Error('sqlite unavailable'));
+
+    await expect(
+      (await import('./persistence')).applyMutationBatch(
+        { expectedRevision: 0, nextRevision: 1, mutations: [] },
+        previewSnapshot,
+      ),
+    ).rejects.toMatchObject({ code: 'save_failed' });
+    expect(window.localStorage.getItem('whybrary.preview.snapshot')).toBeNull();
+  });
+
   afterEach(() => {
     window.localStorage.clear();
     setTauriRuntime(false);

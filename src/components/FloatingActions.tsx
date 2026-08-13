@@ -1,5 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
 import type { AppLocale } from '../types';
+import { getCopy } from '../lib/i18n';
 
 type FloatingAction = {
   id: string;
@@ -48,9 +56,10 @@ function loadStoredPosition(): StoredDockPosition | null {
 
     return {
       edge: parsed.edge ?? null,
-      normalizedX: typeof parsed.normalizedX === 'number'
-        ? Math.min(1, Math.max(0, parsed.normalizedX))
-        : undefined,
+      normalizedX:
+        typeof parsed.normalizedX === 'number'
+          ? Math.min(1, Math.max(0, parsed.normalizedX))
+          : undefined,
       normalizedY: Math.min(1, Math.max(0, parsed.normalizedY)),
     };
   } catch {
@@ -79,6 +88,7 @@ export function FloatingActions({
   isMobile = false,
   locale,
 }: FloatingActionsProps) {
+  const copy = getCopy(locale);
   const dockRef = useRef<HTMLDivElement>(null);
   const dragOffsetRef = useRef<Position | null>(null);
   const dragStartRef = useRef<Position | null>(null);
@@ -88,7 +98,9 @@ export function FloatingActions({
   const [dragging, setDragging] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [position, setPosition] = useState<Position | null>(null);
-  const [dockEdge, setDockEdge] = useState<'left' | 'right' | null>(storedPositionRef.current?.edge ?? 'right');
+  const [dockEdge, setDockEdge] = useState<'left' | 'right' | null>(
+    storedPositionRef.current?.edge ?? 'right',
+  );
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -106,14 +118,21 @@ export function FloatingActions({
         if (!current) {
           const stored = storedPositionRef.current;
           if (stored) {
-            const maxX = Math.max(DOCK_MARGIN, container.clientWidth - dock.offsetWidth - DOCK_MARGIN);
-            const maxY = Math.max(DOCK_MARGIN, container.clientHeight - dock.offsetHeight - DOCK_MARGIN);
+            const maxX = Math.max(
+              DOCK_MARGIN,
+              container.clientWidth - dock.offsetWidth - DOCK_MARGIN,
+            );
+            const maxY = Math.max(
+              DOCK_MARGIN,
+              container.clientHeight - dock.offsetHeight - DOCK_MARGIN,
+            );
             const next = {
-              x: stored.edge === 'left'
-                ? DOCK_MARGIN
-                : stored.edge === 'right'
-                  ? maxX
-                  : DOCK_MARGIN + (stored.normalizedX ?? 0.5) * (maxX - DOCK_MARGIN),
+              x:
+                stored.edge === 'left'
+                  ? DOCK_MARGIN
+                  : stored.edge === 'right'
+                    ? maxX
+                    : DOCK_MARGIN + (stored.normalizedX ?? 0.5) * (maxX - DOCK_MARGIN),
               y: DOCK_MARGIN + stored.normalizedY * (maxY - DOCK_MARGIN),
             };
             positionRef.current = next;
@@ -132,11 +151,12 @@ export function FloatingActions({
 
         const maxX = Math.max(DOCK_MARGIN, container.clientWidth - dock.offsetWidth - DOCK_MARGIN);
         const stored = storedPositionRef.current;
-        const nextX = dockEdge === 'left'
-          ? DOCK_MARGIN
-          : dockEdge === 'right'
-            ? maxX
-            : DOCK_MARGIN + (stored?.normalizedX ?? 0.5) * (maxX - DOCK_MARGIN);
+        const nextX =
+          dockEdge === 'left'
+            ? DOCK_MARGIN
+            : dockEdge === 'right'
+              ? maxX
+              : DOCK_MARGIN + (stored?.normalizedX ?? 0.5) * (maxX - DOCK_MARGIN);
         const next = clampPosition(container, dock, nextX, current.y);
         positionRef.current = next;
         return next;
@@ -166,7 +186,10 @@ export function FloatingActions({
         return;
       }
 
-      if (dragStart && Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) >= DRAG_THRESHOLD) {
+      if (
+        dragStart &&
+        Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) >= DRAG_THRESHOLD
+      ) {
         movedRef.current = true;
       }
 
@@ -187,22 +210,28 @@ export function FloatingActions({
       const current = positionRef.current;
       if (container && dock && current && movedRef.current) {
         const maxX = Math.max(DOCK_MARGIN, container.clientWidth - dock.offsetWidth - DOCK_MARGIN);
-        const maxY = Math.max(DOCK_MARGIN, container.clientHeight - dock.offsetHeight - DOCK_MARGIN);
+        const maxY = Math.max(
+          DOCK_MARGIN,
+          container.clientHeight - dock.offsetHeight - DOCK_MARGIN,
+        );
         const distanceLeft = current.x;
         const distanceRight = container.clientWidth - current.x - dock.offsetWidth;
-        const edge: StoredDockPosition['edge'] = distanceLeft <= EDGE_SNAP_DISTANCE
-          ? 'left'
-          : distanceRight <= EDGE_SNAP_DISTANCE
-            ? 'right'
-            : null;
+        const edge: StoredDockPosition['edge'] =
+          distanceLeft <= EDGE_SNAP_DISTANCE
+            ? 'left'
+            : distanceRight <= EDGE_SNAP_DISTANCE
+              ? 'right'
+              : null;
         const next = clampPosition(
           container,
           dock,
           edge === 'left' ? DOCK_MARGIN : edge === 'right' ? maxX : current.x,
           current.y,
         );
-        const normalizedX = maxX === DOCK_MARGIN ? 0 : (next.x - DOCK_MARGIN) / (maxX - DOCK_MARGIN);
-        const normalizedY = maxY === DOCK_MARGIN ? 0 : (next.y - DOCK_MARGIN) / (maxY - DOCK_MARGIN);
+        const normalizedX =
+          maxX === DOCK_MARGIN ? 0 : (next.x - DOCK_MARGIN) / (maxX - DOCK_MARGIN);
+        const normalizedY =
+          maxY === DOCK_MARGIN ? 0 : (next.y - DOCK_MARGIN) / (maxY - DOCK_MARGIN);
         const stored: StoredDockPosition = {
           edge,
           normalizedX: edge ? undefined : normalizedX,
@@ -260,9 +289,7 @@ export function FloatingActions({
     setMinimized((current) => !current);
   };
 
-  const edgeClass = minimized && !isMobile && dockEdge
-    ? `is-edge-peek is-edge-${dockEdge}`
-    : '';
+  const edgeClass = minimized && !isMobile && dockEdge ? `is-edge-peek is-edge-${dockEdge}` : '';
 
   return (
     <div
@@ -274,28 +301,30 @@ export function FloatingActions({
     >
       {!isMobile && !minimized ? (
         <div className="floating-actions__grip" onPointerDown={handlePointerDown}>
-          {locale === 'zh' ? '拖动' : 'Drag'}
+          {copy.floatingActions.drag}
         </div>
       ) : null}
 
-      {!minimized ? actions.map((action) => (
-        <button
-          className="floating-actions__button"
-          disabled={action.disabled}
-          key={action.id}
-          onClick={action.onPress}
-          title={action.title}
-          type="button"
-        >
-          {action.label}
-        </button>
-      )) : null}
+      {!minimized
+        ? actions.map((action) => (
+            <button
+              className="floating-actions__button"
+              disabled={action.disabled}
+              key={action.id}
+              onClick={action.onPress}
+              title={action.title}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))
+        : null}
 
       <button
-        aria-label={locale === 'zh' ? (minimized ? '展开快捷操作' : '收起快捷操作') : minimized ? 'Expand quick actions' : 'Minimize quick actions'}
+        aria-label={minimized ? copy.floatingActions.expand : copy.floatingActions.minimize}
         className="floating-actions__toggle"
         onClick={!minimized ? toggleMinimized : undefined}
-        title={locale === 'zh' ? (minimized ? '展开快捷操作' : '收起快捷操作') : minimized ? 'Expand quick actions' : 'Minimize quick actions'}
+        title={minimized ? copy.floatingActions.expand : copy.floatingActions.minimize}
         type="button"
       >
         {minimized ? '+' : '\u2212'}

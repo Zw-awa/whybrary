@@ -47,7 +47,7 @@ function renderPanel(overrides?: Partial<React.ComponentProps<typeof WhyTodoPane
       onChangeTodoText={vi.fn()}
       onDeleteTodo={vi.fn()}
       onToggleTodo={vi.fn()}
-      space={makeSpace()}
+      todos={makeSpace().todos}
       {...overrides}
     />,
   );
@@ -63,6 +63,40 @@ describe('WhyTodoPanel dock actions', () => {
     expect(target.tagName).toBe('FORM');
     expect(target.querySelector('input')).toBeTruthy();
     expect(target.querySelector('button')).toBeTruthy();
+  });
+
+  it('keeps advanced planning fields hidden until enabled', async () => {
+    const onTodoMetadataChange = vi.fn();
+    const { rerender } = render(
+      <WhyTodoPanel
+        locale="en"
+        onAddTodo={vi.fn()}
+        onChangeTodoText={vi.fn()}
+        onDeleteTodo={vi.fn()}
+        onTodoMetadataChange={onTodoMetadataChange}
+        onToggleTodo={vi.fn()}
+        todos={makeSpace().todos}
+      />,
+    );
+    expect(screen.queryByLabelText('Priority: open 1')).toBeNull();
+    rerender(
+      <WhyTodoPanel
+        advancedEnabled
+        locale="en"
+        onAddTodo={vi.fn()}
+        onChangeTodoText={vi.fn()}
+        onDeleteTodo={vi.fn()}
+        onTodoMetadataChange={onTodoMetadataChange}
+        onToggleTodo={vi.fn()}
+        todos={makeSpace().todos}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Priority: open 1'), { target: { value: 'high' } });
+    fireEvent.change(screen.getByLabelText('Due date: open 1'), {
+      target: { value: '2026-02-14' },
+    });
+    expect(onTodoMetadataChange).toHaveBeenCalledWith('todo-2', 'high', undefined);
+    expect(onTodoMetadataChange).toHaveBeenCalledWith('todo-2', undefined, '2026-02-14');
   });
 
   it('minimizes and restores the floating action dock', async () => {
@@ -84,7 +118,7 @@ describe('WhyTodoPanel dock actions', () => {
     const dock = document.querySelector('.floating-actions') as HTMLDivElement;
     Object.defineProperty(dock, 'offsetWidth', {
       configurable: true,
-      get: () => dock.classList.contains('is-minimized') ? 46 : 112,
+      get: () => (dock.classList.contains('is-minimized') ? 46 : 112),
     });
 
     await user.click(screen.getByRole('button', { name: '收起快捷操作' }));
@@ -106,9 +140,27 @@ describe('WhyTodoPanel dock actions', () => {
     fireEvent.pointerMove(window, { clientX: 20, clientY: 180 });
     fireEvent.pointerUp(window, { clientX: 20, clientY: 180 });
 
-    expect(JSON.parse(window.localStorage.getItem('whybrary.ui.todoDockPosition') ?? '{}')).toMatchObject({ edge: 'left' });
+    expect(
+      JSON.parse(window.localStorage.getItem('whybrary.ui.todoDockPosition') ?? '{}'),
+    ).toMatchObject({ edge: 'left' });
     expect(dock.className).toContain('is-edge-left');
     expect(screen.getByRole('button', { name: '展开快捷操作' })).toBeTruthy();
+  });
+
+  it('uses localized floating action labels', () => {
+    render(
+      <WhyTodoPanel
+        locale="en"
+        onAddTodo={vi.fn()}
+        onChangeTodoText={vi.fn()}
+        onDeleteTodo={vi.fn()}
+        onToggleTodo={vi.fn()}
+        todos={makeSpace().todos}
+      />,
+    );
+
+    expect(screen.getByText('Drag')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Minimize quick actions' })).toBeTruthy();
   });
 
   it('keeps the minimized control floating when released away from an edge', async () => {
@@ -121,7 +173,9 @@ describe('WhyTodoPanel dock actions', () => {
     fireEvent.pointerMove(window, { clientX: 1100, clientY: 300 });
     fireEvent.pointerUp(window, { clientX: 1100, clientY: 300 });
 
-    expect(JSON.parse(window.localStorage.getItem('whybrary.ui.todoDockPosition') ?? '{}')).toMatchObject({
+    expect(
+      JSON.parse(window.localStorage.getItem('whybrary.ui.todoDockPosition') ?? '{}'),
+    ).toMatchObject({
       edge: null,
     });
     expect(dock.className).not.toContain('is-edge-peek');
@@ -141,7 +195,7 @@ describe('WhyTodoPanel dock actions', () => {
         onDeleteTodo={vi.fn()}
         onToggleExpanded={onToggleExpanded}
         onToggleTodo={vi.fn()}
-        space={makeSpace()}
+        todos={makeSpace().todos}
       />,
     );
 
@@ -156,7 +210,7 @@ describe('WhyTodoPanel dock actions', () => {
         onDeleteTodo={vi.fn()}
         onToggleExpanded={onToggleExpanded}
         onToggleTodo={vi.fn()}
-        space={makeSpace()}
+        todos={makeSpace().todos}
       />,
     );
     expect(screen.getByRole('button', { name: '还原布局' })).toBeTruthy();

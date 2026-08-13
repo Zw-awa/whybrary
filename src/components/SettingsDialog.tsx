@@ -1,4 +1,4 @@
-import type { AppLocale } from '../types';
+import type { AppLocale, ThemeMode } from '../types';
 import { getCopy } from '../lib/i18n';
 
 type SettingsDialogProps = {
@@ -6,6 +6,10 @@ type SettingsDialogProps = {
   onClose: () => void;
   onLocaleChange: (nextLocale: AppLocale) => void;
   onOpenTutorial: () => void;
+  onThemeChange: (theme: ThemeMode) => void;
+  theme: ThemeMode;
+  advancedEnabled: boolean;
+  onAdvancedChange: (enabled: boolean) => void;
 };
 
 export function SettingsDialog({
@@ -13,20 +17,16 @@ export function SettingsDialog({
   onClose,
   onLocaleChange,
   onOpenTutorial,
+  onThemeChange,
+  theme,
+  advancedEnabled,
+  onAdvancedChange,
 }: SettingsDialogProps) {
   const copy = getCopy(locale);
 
   return (
-    <div
-      aria-modal="true"
-      className="dialog-backdrop"
-      onClick={onClose}
-      role="dialog"
-    >
-      <div
-        className="dialog-card settings-card"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <div aria-modal="true" className="dialog-backdrop" onClick={onClose} role="dialog">
+      <div className="dialog-card settings-card" onClick={(event) => event.stopPropagation()}>
         <div className="dialog-card__body settings-card__body">
           <p className="eyebrow">{copy.appName}</p>
           <div className="settings-card__header">
@@ -57,6 +57,44 @@ export function SettingsDialog({
               >
                 {copy.settings.languageChinese}
               </button>
+            </div>
+          </section>
+
+          <section className="settings-card__section">
+            <div>
+              <strong>{copy.settings.advancedTitle}</strong>
+              <p>{copy.settings.advancedBody}</p>
+            </div>
+            <label className="settings-card__toggle">
+              <input
+                checked={advancedEnabled}
+                onChange={(event) => onAdvancedChange(event.target.checked)}
+                type="checkbox"
+              />
+              <span>{copy.settings.advancedEnable}</span>
+            </label>
+          </section>
+
+          <section className="settings-card__section">
+            <div>
+              <strong>{copy.settings.themeTitle}</strong>
+              <p>{copy.settings.themeBody}</p>
+            </div>
+            <div className="settings-card__locale-grid">
+              {(['light', 'dark', 'system'] as const).map((mode) => (
+                <button
+                  className={`settings-card__locale-option ${theme === mode ? 'is-active' : ''}`}
+                  key={mode}
+                  onClick={() => onThemeChange(mode)}
+                  type="button"
+                >
+                  {mode === 'light'
+                    ? copy.settings.themeLight
+                    : mode === 'dark'
+                      ? copy.settings.themeDark
+                      : copy.settings.themeSystem}
+                </button>
+              ))}
             </div>
           </section>
 

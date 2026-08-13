@@ -1,7 +1,10 @@
-export type ThemeMode = 'light' | 'dark';
+export type ThemeMode = 'light' | 'dark' | 'system';
 export type AppLocale = 'en' | 'zh';
 export type DeviceLayoutMode = 'phone' | 'tablet' | 'desktop';
 export type MobilePrimaryView = 'map' | 'todo' | 'spaces';
+export type NodeCategory = 'idea' | 'reason' | 'question' | 'action';
+export type NodeColor = 'neutral' | 'blue' | 'green' | 'amber' | 'red';
+export type TodoPriority = 'low' | 'medium' | 'high';
 
 export type ViewportState = {
   x: number;
@@ -11,6 +14,8 @@ export type ViewportState = {
 
 export type BrainNodeData = {
   label: string;
+  category?: NodeCategory;
+  color?: NodeColor;
   onLabelChange?: (id: string, nextLabel: string) => void;
   onStartRename?: (id: string) => void;
   onFinishRename?: () => void;
@@ -38,6 +43,8 @@ export type TodoItem = {
   completed: boolean;
   createdAt: string;
   updatedAt: string;
+  priority?: TodoPriority;
+  dueDate?: string | null;
 };
 
 export type Space = {

@@ -61,7 +61,10 @@ export function useBrainSelection({
   useEffect(() => {
     setInfoSelection((current) => {
       const next = current.filter((nodeId) => nodeLabels.some((node) => node.id === nodeId));
-      if (next.length === current.length && next.every((nodeId, index) => nodeId === current[index])) {
+      if (
+        next.length === current.length &&
+        next.every((nodeId, index) => nodeId === current[index])
+      ) {
         return current;
       }
       return next;
@@ -146,9 +149,7 @@ export function useBrainSelection({
     setSelectedNodeId(nodeId);
     if (isInfoMultiSelect) {
       setInfoSelection((current) =>
-        current.includes(nodeId)
-          ? current.filter((item) => item !== nodeId)
-          : [...current, nodeId],
+        current.includes(nodeId) ? current.filter((item) => item !== nodeId) : [...current, nodeId],
       );
       return;
     }

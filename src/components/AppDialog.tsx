@@ -1,3 +1,14 @@
+export type AppDialogState = null | {
+  cancelLabel?: string;
+  confirmLabel: string;
+  message: string;
+  onCancel?: () => void;
+  onConfirm: () => void;
+  title: string;
+  tone?: 'neutral' | 'danger';
+  variant?: 'confirm' | 'notice';
+};
+
 type AppDialogProps = {
   cancelLabel?: string;
   confirmLabel: string;
@@ -20,12 +31,7 @@ export function AppDialog({
   title,
 }: AppDialogProps) {
   return (
-    <div
-      aria-modal="true"
-      className="dialog-backdrop"
-      onClick={onCancel}
-      role="dialog"
-    >
+    <div aria-modal="true" className="dialog-backdrop" onClick={onCancel} role="dialog">
       <div
         className={`dialog-card dialog-card--${tone}`}
         onClick={(event) => event.stopPropagation()}
