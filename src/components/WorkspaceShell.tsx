@@ -73,7 +73,7 @@ export function WorkspaceShell({ model }: WorkspaceShellProps) {
               onChangeTodoText={model.todos.update}
               onDeleteTodo={model.todos.delete}
               onTodoMetadataChange={model.todos.updateMetadata}
-              onToggleExpanded={toggleTodoExpanded}
+              onToggleExpanded={isMobile ? undefined : toggleTodoExpanded}
               onToggleTodo={model.todos.toggle}
               todos={activeSpace.todos}
             />
@@ -103,7 +103,7 @@ export function WorkspaceShell({ model }: WorkspaceShellProps) {
               onStartRenameNode={model.map.startRenameNode}
               onToggleConnection={model.map.toggleConnection}
               onToggleEditMode={model.map.toggleEditing}
-              onToggleExpanded={toggleMapExpanded}
+              onToggleExpanded={isMobile ? undefined : toggleMapExpanded}
               onViewportChange={model.map.updateViewport}
               viewport={activeSpace.viewport}
             />

@@ -152,7 +152,7 @@ export const WhyTodoPanel = memo(function WhyTodoPanel({
     <section className="panel panel--todo">
       <div className="panel__header">
         <h2>{copy.todo.title}</h2>
-        {onToggleExpanded ? (
+        {onToggleExpanded && !isMobile ? (
           <button className="button panel__expand" onClick={onToggleExpanded} type="button">
             {isExpanded ? copy.todo.restorePanel : copy.todo.expandPanel}
           </button>

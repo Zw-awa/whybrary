@@ -265,7 +265,7 @@ export function BrainCanvas({
         <button className="button panel__fit" onClick={fitToNodes} type="button">
           {copy.map.fitToNodes}
         </button>
-        {onToggleExpanded ? (
+        {onToggleExpanded && !isMobile ? (
           <button className="button panel__expand" onClick={onToggleExpanded} type="button">
             {isExpanded ? copy.map.restorePanel : copy.map.expandPanel}
           </button>

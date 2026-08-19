@@ -184,6 +184,18 @@ describe('WhyTodoPanel dock actions', () => {
     expect(dock.style.left).toBe('400px');
   });
 
+  it('restores minimized quick actions from the mobile toggle button', async () => {
+    const user = userEvent.setup();
+    renderPanel({ isMobile: true });
+
+    await user.click(screen.getByRole('button', { name: '收起快捷操作' }));
+    expect(screen.queryByRole('button', { name: '顶部' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '展开快捷操作' }));
+    expect(screen.getByRole('button', { name: '顶部' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '收起快捷操作' })).toBeTruthy();
+  });
+
   it('requests panel expansion and restoration', async () => {
     const user = userEvent.setup();
     const onToggleExpanded = vi.fn();

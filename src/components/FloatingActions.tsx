@@ -323,7 +323,10 @@ export function FloatingActions({
       <button
         aria-label={minimized ? copy.floatingActions.expand : copy.floatingActions.minimize}
         className="floating-actions__toggle"
-        onClick={!minimized ? toggleMinimized : undefined}
+        onClick={(event) => {
+          event.stopPropagation();
+          toggleMinimized();
+        }}
         title={minimized ? copy.floatingActions.expand : copy.floatingActions.minimize}
         type="button"
       >

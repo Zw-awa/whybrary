@@ -51,9 +51,11 @@ vi.mock('./components/BrainCanvas', () => ({
       <button onClick={() => onInfoOpenChange?.(true)} type="button">
         Mock Open Info
       </button>
-      <button onClick={onToggleExpanded} type="button">
-        Mock Expand Map
-      </button>
+      {onToggleExpanded ? (
+        <button onClick={onToggleExpanded} type="button">
+          Mock Expand Map
+        </button>
+      ) : null}
       <button data-tour-id="edit-map" onClick={onToggleEditMode} type="button">
         Mock Edit Map
       </button>
@@ -67,16 +69,20 @@ vi.mock('./components/BrainCanvas', () => ({
 vi.mock('./components/WhyTodoPanel', () => ({
   WhyTodoPanel: ({
     onToggleExpanded,
+    isMobile,
     todos,
   }: {
     onToggleExpanded?: () => void;
+    isMobile?: boolean;
     todos: AppSnapshot['spaces'][number]['todos'];
   }) => (
     <section data-testid="todo-panel-mock">
       {todos.length} todos
-      <button onClick={onToggleExpanded} type="button">
-        Mock Expand Todo
-      </button>
+      {onToggleExpanded && !isMobile ? (
+        <button onClick={onToggleExpanded} type="button">
+          Mock Expand Todo
+        </button>
+      ) : null}
     </section>
   ),
 }));
@@ -251,6 +257,15 @@ describe('App integration', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Spaces' })[0]);
     expect(screen.getByRole('button', { name: 'Close spaces' })).toBeTruthy();
+  });
+
+  it('hides desktop panel expansion controls on mobile', async () => {
+    setWindowWidth(390);
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+    expect(screen.queryByRole('button', { name: 'Mock Expand Map' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Mock Expand Todo' })).toBeNull();
   });
 
   it('keeps the desktop sidebar layout on narrower desktop windows', async () => {
