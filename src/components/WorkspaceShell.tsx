@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { BrainCanvas } from './BrainCanvas';
 import { GuidedTutorial } from './GuidedTutorial';
+import { PluginPanelHost } from './PluginPanelHost';
 import { WhyTodoPanel } from './WhyTodoPanel';
 import { WorkspaceBanners } from './WorkspaceBanners';
 import { WorkspaceHeader } from './WorkspaceHeader';
@@ -109,6 +110,7 @@ export function WorkspaceShell({ model }: WorkspaceShellProps) {
             />
           ) : null}
         </div>
+        <PluginPanelHost locale={snapshot.locale} panels={model.plugins.panels} />
         {model.tutorial.visible ? (
           <GuidedTutorial
             locale={snapshot.locale}

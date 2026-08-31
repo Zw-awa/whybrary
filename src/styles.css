@@ -1981,5 +1981,60 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
-/* SPDX-FileCopyrightText: 2026 Zw-awa
-SPDX-License-Identifier: MIT */
+
+.plugin-panels {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.plugin-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  padding: 16px;
+}
+
+.plugin-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.plugin-panel__header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.plugin-panel__header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.plugin-panel__header > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.plugin-panel__items {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-panel__item {
+  display: grid;
+  gap: 3px;
+  border-left: 3px solid var(--line);
+  padding: 8px 10px;
+  background: var(--panel-strong);
+  font-size: 0.86rem;
+}
+
+.plugin-panel__item--warning { border-left-color: #c9782b; }
+.plugin-panel__item--success { border-left-color: #4c956c; }
+.plugin-panel__item small { color: var(--muted); }

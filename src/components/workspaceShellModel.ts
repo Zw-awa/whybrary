@@ -7,12 +7,16 @@ import type {
   Space,
   TodoPriority,
 } from '../types';
+import type { PluginPanel, PluginViewItem } from '../plugins/types';
 import type { TutorialStep } from './GuidedTutorial';
 
 export type WorkspaceShellModel = {
   data: {
     activeSpace: Space;
     snapshot: AppSnapshot;
+  };
+  plugins: {
+    panels: { panel: PluginPanel; items: PluginViewItem[] }[];
   };
   ui: {
     advancedEnabled: boolean;

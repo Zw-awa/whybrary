@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createOfficialPluginRegistry } from '../plugins';
 import type { AppDialogState } from './AppDialog';
 import { getCopy } from '../lib/i18n';
 import type { AppLocale, AppSnapshot, BrainNode, Space, ThemeMode } from '../types';
@@ -113,8 +114,32 @@ export function useWorkspaceViewModel({
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [isMapEditing, setIsMapEditing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const copy = getCopy(snapshot.locale);
+  const [pluginsActivated, setPluginsActivated] = useState(false);
+  const pluginRegistry = useMemo(() => createOfficialPluginRegistry(), []);
+  useEffect(() => {
+    const dispose = pluginRegistry.activate({
+      getSnapshot,
+      subscribe: () => () => undefined,
+    });
+    setPluginsActivated(true);
+    return () => {
+      dispose();
+      setPluginsActivated(false);
+    };
+  }, [getSnapshot, pluginRegistry]);
 
+  const pluginPanels = useMemo(
+    () =>
+      !pluginsActivated
+        ? []
+        : pluginRegistry.listPanels().map((panel) => ({
+            panel,
+            items: panel.getItems(snapshot, snapshot.locale),
+          })),
+    [pluginsActivated, pluginRegistry, snapshot],
+  );
+
+  const copy = getCopy(snapshot.locale);
   const closeDialog = useCallback(() => setDialogState(null), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openSettings = useCallback(() => setSettingsOpen(true), []);
@@ -382,6 +407,7 @@ export function useWorkspaceViewModel({
       data,
       history,
       map,
+      plugins: { panels: pluginPanels },
       persistence: persistenceModel,
       preferences,
       spaces,
@@ -395,6 +421,7 @@ export function useWorkspaceViewModel({
       history,
       map,
       persistenceModel,
+      pluginPanels,
       preferences,
       spaces,
       todos,
