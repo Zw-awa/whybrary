@@ -196,6 +196,13 @@ type AppCopy = {
     advancedTitle: string;
     advancedBody: string;
     advancedEnable: string;
+    pluginsTitle: string;
+    pluginsBody: string;
+    pluginsEnable: string;
+    pluginsRiskTitle: string;
+    pluginsRiskBody: string;
+    pluginsRiskCancel: string;
+    pluginsRiskConfirm: string;
   };
   onboarding: {
     languageTitle: string;
@@ -456,6 +463,15 @@ const copy: Record<AppLocale, AppCopy> = {
       advancedBody:
         'Reveal optional node classification and task planning fields. Existing workflows stay unchanged when this is off.',
       advancedEnable: 'Show advanced fields',
+      pluginsTitle: 'Plugin support',
+      pluginsBody:
+        'Plugin support is off by default. Only enable it when you choose to use plugins from sources you trust.',
+      pluginsEnable: 'Enable plugin support',
+      pluginsRiskTitle: 'Enable third-party plugins?',
+      pluginsRiskBody:
+        'Plugins may run code and access the workspace capabilities you grant them. Install plugins only from sources you trust. You are responsible for your choice to install third-party plugins and for any resulting loss, damage, or data exposure.',
+      pluginsRiskCancel: 'Keep disabled',
+      pluginsRiskConfirm: 'I understand, enable plugins',
     },
     onboarding: {
       languageTitle: 'Choose your language',
@@ -689,6 +705,14 @@ const copy: Record<AppLocale, AppCopy> = {
       advancedTitle: '高级字段',
       advancedBody: '显示可选的节点分类与任务规划字段。关闭时不会改变现有工作流。',
       advancedEnable: '显示高级字段',
+      pluginsTitle: '插件功能',
+      pluginsBody: '插件功能默认关闭。只有在你决定使用来自可信来源的插件时才应开启。',
+      pluginsEnable: '启用插件功能',
+      pluginsRiskTitle: '启用第三方插件？',
+      pluginsRiskBody:
+        '插件可能执行代码，并访问你授予它们的工作区能力。请只安装来自可信来源的插件。安装第三方插件是你的自主选择；由此导致的损失、损害或数据暴露，均由你自行承担。',
+      pluginsRiskCancel: '保持关闭',
+      pluginsRiskConfirm: '我已了解，启用插件',
     },
     onboarding: {
       languageTitle: '选择语言',

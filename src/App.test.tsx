@@ -323,6 +323,28 @@ describe('App integration', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
   });
 
+  it('keeps plugin support disabled until the user acknowledges the third-party risk', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Loaded Space' });
+    expect(window.localStorage.getItem('whybrary.plugins.enabled')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    const toggle = screen.getByRole('checkbox', { name: 'Enable plugin support' });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole('heading', { name: 'Enable third-party plugins?' })).toBeTruthy();
+    expect(
+      screen.getByText(/You are responsible for your choice to install third-party plugins/i),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep disabled' }));
+    expect(window.localStorage.getItem('whybrary.plugins.enabled')).toBeNull();
+
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: 'I understand, enable plugins' }));
+    expect(window.localStorage.getItem('whybrary.plugins.enabled')).toBe('true');
+  });
+
   it('keeps advanced fields opt-in and remembers the preference', async () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'Loaded Space' });

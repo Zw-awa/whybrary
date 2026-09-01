@@ -10,6 +10,8 @@ type SettingsDialogProps = {
   theme: ThemeMode;
   advancedEnabled: boolean;
   onAdvancedChange: (enabled: boolean) => void;
+  pluginsEnabled: boolean;
+  onPluginsChange: (enabled: boolean) => void;
 };
 
 export function SettingsDialog({
@@ -21,6 +23,8 @@ export function SettingsDialog({
   theme,
   advancedEnabled,
   onAdvancedChange,
+  pluginsEnabled,
+  onPluginsChange,
 }: SettingsDialogProps) {
   const copy = getCopy(locale);
 
@@ -72,6 +76,21 @@ export function SettingsDialog({
                 type="checkbox"
               />
               <span>{copy.settings.advancedEnable}</span>
+            </label>
+          </section>
+
+          <section className="settings-card__section">
+            <div>
+              <strong>{copy.settings.pluginsTitle}</strong>
+              <p>{copy.settings.pluginsBody}</p>
+            </div>
+            <label className="settings-card__toggle">
+              <input
+                checked={pluginsEnabled}
+                onChange={(event) => onPluginsChange(event.target.checked)}
+                type="checkbox"
+              />
+              <span>{copy.settings.pluginsEnable}</span>
             </label>
           </section>
 

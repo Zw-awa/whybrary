@@ -8,6 +8,7 @@ import type { WorkspaceShellModel } from './workspaceShellModel';
 import { useSnapshotTransferController } from './useSnapshotTransferController';
 
 const ADVANCED_FEATURES_KEY = 'whybrary.ui.advancedFeatures';
+const PLUGINS_ENABLED_KEY = 'whybrary.plugins.enabled';
 
 type Commands = {
   preferences: {
@@ -114,9 +115,16 @@ export function useWorkspaceViewModel({
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [isMapEditing, setIsMapEditing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pluginsEnabled, setPluginsEnabledState] = useState(
+    () => window.localStorage.getItem(PLUGINS_ENABLED_KEY) === 'true',
+  );
   const [pluginsActivated, setPluginsActivated] = useState(false);
   const pluginRegistry = useMemo(() => createOfficialPluginRegistry(), []);
   useEffect(() => {
+    if (!pluginsEnabled) {
+      setPluginsActivated(false);
+      return;
+    }
     const dispose = pluginRegistry.activate({
       getSnapshot,
       subscribe: () => () => undefined,
@@ -126,7 +134,7 @@ export function useWorkspaceViewModel({
       dispose();
       setPluginsActivated(false);
     };
-  }, [getSnapshot, pluginRegistry]);
+  }, [getSnapshot, pluginRegistry, pluginsEnabled]);
 
   const pluginPanels = useMemo(
     () =>
@@ -147,6 +155,30 @@ export function useWorkspaceViewModel({
     setIsMapEditing(false);
     setEditingNodeId(null);
   }, []);
+  const setPluginsEnabled = useCallback(
+    (enabled: boolean) => {
+      if (!enabled) {
+        window.localStorage.setItem(PLUGINS_ENABLED_KEY, 'false');
+        setPluginsEnabledState(false);
+        return;
+      }
+      setDialogState({
+        cancelLabel: copy.settings.pluginsRiskCancel,
+        confirmLabel: copy.settings.pluginsRiskConfirm,
+        message: copy.settings.pluginsRiskBody,
+        onCancel: closeDialog,
+        onConfirm: () => {
+          window.localStorage.setItem(PLUGINS_ENABLED_KEY, 'true');
+          setPluginsEnabledState(true);
+          closeDialog();
+        },
+        title: copy.settings.pluginsRiskTitle,
+        tone: 'danger',
+      });
+    },
+    [closeDialog, copy.settings],
+  );
+
   const setAdvancedFeatures = useCallback((enabled: boolean) => {
     setAdvancedEnabled(enabled);
     window.localStorage.setItem(ADVANCED_FEATURES_KEY, String(enabled));
@@ -438,8 +470,10 @@ export function useWorkspaceViewModel({
       onClose: closeSettings,
       onLocaleChange: commandPreferences.setLocale,
       onOpenTutorial: openTutorial,
+      onPluginsChange: setPluginsEnabled,
       onThemeChange: commandPreferences.setTheme,
       open: settingsOpen,
+      pluginsEnabled,
       theme: snapshot.theme,
     }),
     [
@@ -448,7 +482,9 @@ export function useWorkspaceViewModel({
       commandPreferences.setLocale,
       commandPreferences.setTheme,
       openTutorial,
+      pluginsEnabled,
       setAdvancedFeatures,
+      setPluginsEnabled,
       settingsOpen,
       snapshot.locale,
       snapshot.theme,
