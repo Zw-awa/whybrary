@@ -1,5 +1,8 @@
 import type { AppLocale, AppSnapshot } from '../types';
 
+export type PluginPermission =
+  'workspace:read' | 'ui:panel' | 'commands:register' | 'settings:read' | 'settings:write';
+
 type Localized = string | ((locale: AppLocale) => string);
 
 export type PluginViewItem = {
@@ -33,5 +36,18 @@ export type WhybraryPlugin = {
   id: string;
   name: Localized;
   version: string;
+  permissions?: PluginPermission[];
   activate: (context: PluginContext) => void | (() => void);
+};
+
+export type PluginRuntimeStatus = 'disabled' | 'activating' | 'active' | 'failed';
+
+export type PluginRuntimeInfo = {
+  id: string;
+  name: string;
+  version: string;
+  source: 'built-in' | 'local';
+  permissions: PluginPermission[];
+  status: PluginRuntimeStatus;
+  error?: string;
 };

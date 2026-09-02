@@ -1,3 +1,4 @@
+import { PluginManager } from './PluginManager';
 import type { AppLocale, ThemeMode } from '../types';
 import { getCopy } from '../lib/i18n';
 
@@ -93,6 +94,8 @@ export function SettingsDialog({
               <span>{copy.settings.pluginsEnable}</span>
             </label>
           </section>
+
+          <PluginManager enabled={pluginsEnabled} locale={locale} />
 
           <section className="settings-card__section">
             <div>

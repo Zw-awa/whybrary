@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 #[cfg(desktop)]
@@ -10,6 +10,18 @@ use tauri::{LogicalSize, Size};
 const LATEST_SCHEMA_VERSION: i32 = 3;
 const SMOKE_MODE_ENV: &str = "WHYBRARY_TAURI_SMOKE";
 const APP_DATA_DIR_OVERRIDE_ENV: &str = "WHYBRARY_APP_DATA_DIR";
+
+const PLUGIN_MANIFEST_FILE: &str = "whybrary-plugin.json";
+const PLUGIN_MANIFEST_SCHEMA_VERSION: u64 = 1;
+const PLUGIN_DIRECTORY_SETTING_KEY: &str = "pluginDirectory";
+const DEFAULT_PLUGIN_DIRECTORY_NAME: &str = "plugins";
+const SUPPORTED_PLUGIN_PERMISSIONS: [&str; 5] = [
+    "workspace:read",
+    "ui:panel",
+    "commands:register",
+    "settings:read",
+    "settings:write",
+];
 
 const MIGRATION_1_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS settings (
@@ -264,6 +276,309 @@ struct SmokeReport {
     db_path: String,
     schema_version: i32,
     error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PluginDirectoryPath {
+    path: String,
+    is_default: bool,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PluginManifestInfo {
+    schema_version: u64,
+    id: String,
+    name: String,
+    version: String,
+    engine: String,
+    entry: String,
+    permissions: Vec<String>,
+    directory: String,
+    entry_path: String,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PluginDiscoveryDiagnostic {
+    path: String,
+    code: String,
+    message: String,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct DiscoverPluginsResponse {
+    plugins: Vec<PluginManifestInfo>,
+    diagnostics: Vec<PluginDiscoveryDiagnostic>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ValidatedManifest {
+    schema_version: u64,
+    id: String,
+    name: String,
+    version: String,
+    engine: String,
+    entry: String,
+    permissions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ManifestIssue {
+    code: &'static str,
+    message: String,
+}
+
+fn manifest_issue(code: &'static str, message: impl Into<String>) -> ManifestIssue {
+    ManifestIssue { code, message: message.into() }
+}
+
+/// Mirrors the frontend rule /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/ from src/plugins/manifest.ts.
+fn is_valid_plugin_id(id: &str) -> bool {
+    let mut expecting_alnum = true;
+    for ch in id.chars() {
+        match ch {
+            'a'..='z' | '0'..='9' => expecting_alnum = false,
+            '.' | '_' | '-' if !expecting_alnum => expecting_alnum = true,
+            _ => return false,
+        }
+    }
+    !expecting_alnum
+}
+
+/// Mirrors the frontend rule from src/plugins/manifest.ts: no leading slash
+/// and no path segment equal to ".." when split on '/' or '\'.
+fn is_safe_relative_entry(entry: &str) -> bool {
+    if entry.starts_with('/') || entry.starts_with('\\') {
+        return false;
+    }
+    !entry
+        .split(|part| part == '/' || part == '\\')
+        .any(|part| part == "..")
+}
+
+fn validate_plugin_manifest(value: &serde_json::Value) -> Result<ValidatedManifest, ManifestIssue> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| manifest_issue("manifest.invalid", "Plugin manifest must be a JSON object."))?;
+
+    let schema_version = object.get("schemaVersion").and_then(|version| version.as_u64());
+    if schema_version != Some(PLUGIN_MANIFEST_SCHEMA_VERSION) {
+        return Err(manifest_issue(
+            "manifest.schema-version",
+            format!("Plugin manifest schemaVersion must be {PLUGIN_MANIFEST_SCHEMA_VERSION}."),
+        ));
+    }
+
+    let id = object
+        .get("id")
+        .and_then(|raw| raw.as_str())
+        .ok_or_else(|| manifest_issue("manifest.id", "Plugin manifest id must be a non-empty string."))?;
+    if id.trim().is_empty() {
+        return Err(manifest_issue("manifest.id", "Plugin manifest id must be a non-empty string."));
+    }
+    if !is_valid_plugin_id(id) {
+        return Err(manifest_issue(
+            "manifest.id",
+            "Plugin manifest id must use lowercase letters, numbers, dots, dashes, or underscores.",
+        ));
+    }
+
+    let name = object
+        .get("name")
+        .and_then(|raw| raw.as_str())
+        .ok_or_else(|| manifest_issue("manifest.name", "Plugin manifest name must be a non-empty string."))?;
+    if name.trim().is_empty() {
+        return Err(manifest_issue("manifest.name", "Plugin manifest name must be a non-empty string."));
+    }
+
+    let version = object
+        .get("version")
+        .and_then(|raw| raw.as_str())
+        .ok_or_else(|| manifest_issue("manifest.version", "Plugin manifest version must be a non-empty string."))?;
+    if version.trim().is_empty() {
+        return Err(manifest_issue("manifest.version", "Plugin manifest version must be a non-empty string."));
+    }
+
+    let engine = object
+        .get("engine")
+        .and_then(|raw| raw.as_str())
+        .ok_or_else(|| manifest_issue("manifest.engine", "Plugin manifest engine must be a non-empty string."))?;
+    if engine.trim().is_empty() {
+        return Err(manifest_issue("manifest.engine", "Plugin manifest engine must be a non-empty string."));
+    }
+
+    let entry = object
+        .get("entry")
+        .and_then(|raw| raw.as_str())
+        .ok_or_else(|| manifest_issue("manifest.entry", "Plugin manifest entry must be a non-empty string."))?;
+    if entry.trim().is_empty() {
+        return Err(manifest_issue("manifest.entry", "Plugin manifest entry must be a non-empty string."));
+    }
+    if !is_safe_relative_entry(entry) {
+        return Err(manifest_issue("manifest.entry", "Plugin entry must remain inside the plugin directory."));
+    }
+
+    let permissions_value = object
+        .get("permissions")
+        .ok_or_else(|| manifest_issue("manifest.permissions", "Plugin manifest permissions must be an array."))?;
+    let permissions = permissions_value
+        .as_array()
+        .ok_or_else(|| manifest_issue("manifest.permissions", "Plugin manifest permissions must be an array."))?;
+
+    let mut validated_permissions = Vec::with_capacity(permissions.len());
+    for permission in permissions {
+        let permission = permission.as_str().ok_or_else(|| {
+            manifest_issue("manifest.permissions", "Plugin manifest permissions must contain only strings.")
+        })?;
+        if !SUPPORTED_PLUGIN_PERMISSIONS.contains(&permission) {
+            return Err(manifest_issue("manifest.permissions", "Plugin manifest requests an unsupported permission."));
+        }
+        if validated_permissions.contains(&permission.to_string()) {
+            return Err(manifest_issue("manifest.permissions", "Plugin manifest permissions must not repeat values."));
+        }
+        validated_permissions.push(permission.to_string());
+    }
+
+    Ok(ValidatedManifest {
+        schema_version: PLUGIN_MANIFEST_SCHEMA_VERSION,
+        id: id.to_string(),
+        name: name.to_string(),
+        version: version.to_string(),
+        engine: engine.to_string(),
+        entry: entry.to_string(),
+        permissions: validated_permissions,
+    })
+}
+
+fn default_plugin_directory_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut directory = app_data_dir(app)?;
+    directory.push(DEFAULT_PLUGIN_DIRECTORY_NAME);
+    Ok(directory)
+}
+
+fn resolve_plugin_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    let connection = open_connection(app)?;
+    if let Some(configured) = load_setting(&connection, PLUGIN_DIRECTORY_SETTING_KEY)? {
+        return Ok(PathBuf::from(configured));
+    }
+    default_plugin_directory_path(app)
+}
+
+fn load_and_validate_manifest(
+    manifest_path: &Path,
+    directory: &Path,
+) -> Result<PluginManifestInfo, ManifestIssue> {
+    let raw = fs::read_to_string(manifest_path).map_err(|error| {
+        manifest_issue(
+            "manifest.read",
+            format!("Unable to read manifest '{}': {error}", manifest_path.display()),
+        )
+    })?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|error| {
+        manifest_issue(
+            "manifest.parse",
+            format!("Manifest '{}' is not valid JSON: {error}", manifest_path.display()),
+        )
+    })?;
+    let manifest = validate_plugin_manifest(&value)?;
+
+    let entry_path = directory.join(&manifest.entry);
+    let metadata = fs::metadata(&entry_path).map_err(|error| {
+        manifest_issue(
+            "manifest.entry",
+            format!("Plugin entry '{}' is not readable: {error}", manifest.entry),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(manifest_issue(
+            "manifest.entry",
+            format!("Plugin entry '{}' is not a regular file.", manifest.entry),
+        ));
+    }
+
+    Ok(PluginManifestInfo {
+        schema_version: manifest.schema_version,
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        engine: manifest.engine,
+        entry: manifest.entry,
+        permissions: manifest.permissions,
+        directory: directory.display().to_string(),
+        entry_path: entry_path.display().to_string(),
+    })
+}
+
+fn discover_plugins_in_directory(directory: &Path) -> DiscoverPluginsResponse {
+    let mut plugins = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) => {
+            diagnostics.push(PluginDiscoveryDiagnostic {
+                path: directory.display().to_string(),
+                code: "discovery.unreadable".to_string(),
+                message: format!("Unable to read plugin directory '{}': {error}", directory.display()),
+            });
+            return DiscoverPluginsResponse { plugins, diagnostics };
+        }
+    };
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                diagnostics.push(PluginDiscoveryDiagnostic {
+                    path: directory.display().to_string(),
+                    code: "discovery.entry".to_string(),
+                    message: format!("Unable to inspect plugin directory entry: {error}"),
+                });
+                continue;
+            }
+        };
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                diagnostics.push(PluginDiscoveryDiagnostic {
+                    path: entry.path().display().to_string(),
+                    code: "discovery.entry".to_string(),
+                    message: format!("Unable to inspect entry type: {error}"),
+                });
+                continue;
+            }
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        candidates.push(entry.path());
+    }
+
+    candidates.sort();
+
+    for candidate in candidates {
+        let manifest_path = candidate.join(PLUGIN_MANIFEST_FILE);
+        if !manifest_path.is_file() {
+            continue;
+        }
+        match load_and_validate_manifest(&manifest_path, &candidate) {
+            Ok(plugin) => plugins.push(plugin),
+            Err(issue) => diagnostics.push(PluginDiscoveryDiagnostic {
+                path: manifest_path.display().to_string(),
+                code: issue.code.to_string(),
+                message: issue.message,
+            }),
+        }
+    }
+
+    plugins.sort_by(|a, b| a.id.cmp(&b.id));
+    diagnostics.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.code.cmp(&b.code)));
+
+    DiscoverPluginsResponse { plugins, diagnostics }
 }
 
 fn configure_connection(connection: &Connection) -> Result<(), String> {
@@ -958,6 +1273,70 @@ fn replace_workspace(app: AppHandle, snapshot: AppSnapshot, revision: i64) -> Re
     Ok(SaveResult { revision })
 }
 
+#[tauri::command]
+fn default_plugin_directory(app: AppHandle) -> Result<PluginDirectoryPath, String> {
+    Ok(PluginDirectoryPath {
+      path: default_plugin_directory_path(&app)?.display().to_string(),
+      is_default: true,
+    })
+}
+
+#[tauri::command]
+fn get_plugin_directory(app: AppHandle) -> Result<PluginDirectoryPath, String> {
+    let connection = open_connection(&app)?;
+    if let Some(configured) = load_setting(&connection, PLUGIN_DIRECTORY_SETTING_KEY)? {
+        return Ok(PluginDirectoryPath {
+            path: configured,
+            is_default: false,
+        });
+    }
+    Ok(PluginDirectoryPath {
+        path: default_plugin_directory_path(&app)?.display().to_string(),
+        is_default: true,
+    })
+}
+
+#[tauri::command]
+fn set_plugin_directory(app: AppHandle, path: Option<String>) -> Result<PluginDirectoryPath, String> {
+    let Some(path) = path else {
+        let connection = open_connection(&app)?;
+        connection
+            .execute("DELETE FROM settings WHERE key = ?1", [PLUGIN_DIRECTORY_SETTING_KEY])
+            .map_err(|error| format!("Unable to reset plugin directory: {error}"))?;
+        return Ok(PluginDirectoryPath {
+            path: default_plugin_directory_path(&app)?.display().to_string(),
+            is_default: true,
+        });
+    };
+    if path.trim().is_empty() {
+        return Err("Plugin directory must not be empty.".to_string());
+    }
+    let candidate = PathBuf::from(path.trim());
+    let absolute = if candidate.is_absolute() {
+        candidate
+    } else {
+        std::env::current_dir()
+            .map_err(|error| format!("Unable to resolve current directory: {error}"))?
+            .join(candidate)
+    };
+    fs::create_dir_all(&absolute)
+        .map_err(|error| format!("Unable to create plugin directory '{}': {error}", absolute.display()))?;
+
+    let stored = absolute.to_string_lossy().into_owned();
+    let connection = open_connection(&app)?;
+    upsert_setting(&connection, PLUGIN_DIRECTORY_SETTING_KEY, &stored)?;
+    Ok(PluginDirectoryPath {
+        path: stored,
+        is_default: false,
+    })
+}
+
+#[tauri::command]
+fn discover_plugins(app: AppHandle) -> Result<DiscoverPluginsResponse, String> {
+    let directory = resolve_plugin_directory(&app)?;
+    Ok(discover_plugins_in_directory(&directory))
+}
+
 fn smoke_report_path(app: &AppHandle) -> Result<PathBuf, String> {
     let mut report_path = app_data_dir(app)?;
     report_path.push("smoke-report.json");
@@ -1361,6 +1740,241 @@ mod tests {
         let error = apply_mutations_to_connection(&mut connection, &stale).expect_err("stale revision");
         assert!(error.contains("revision conflict"));
     }
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let name = format!(
+            "whybrary-test-{label}-{}-{}",
+            std::process::id(),
+            TEMP_COUNTER.fetch_add(1, Ordering::SeqCst)
+        );
+        let path = std::env::temp_dir().join(name);
+        fs::create_dir_all(&path).expect("create temp dir");
+        path
+    }
+
+    fn valid_manifest_value() -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "id": "my-plugin",
+            "name": "My Plugin",
+            "version": "1.0.0",
+            "engine": "whybrary",
+            "entry": "index.js",
+            "permissions": ["workspace:read", "ui:panel"]
+        })
+    }
+
+    #[test]
+    fn validates_well_formed_manifest() {
+        let manifest = validate_plugin_manifest(&valid_manifest_value()).expect("valid manifest");
+        assert_eq!(manifest.id, "my-plugin");
+        assert_eq!(manifest.name, "My Plugin");
+        assert_eq!(manifest.version, "1.0.0");
+        assert_eq!(manifest.engine, "whybrary");
+        assert_eq!(manifest.entry, "index.js");
+        assert_eq!(manifest.permissions, vec!["workspace:read", "ui:panel"]);
+    }
+
+    #[test]
+    fn rejects_non_object_manifest() {
+        let issue =
+            validate_plugin_manifest(&serde_json::json!(["not", "an", "object"])).expect_err("reject");
+        assert_eq!(issue.code, "manifest.invalid");
+    }
+
+    #[test]
+    fn rejects_unsupported_schema_version() {
+        for version in [serde_json::json!(0), serde_json::json!(2), serde_json::json!("1")] {
+            let mut value = valid_manifest_value();
+            value["schemaVersion"] = version;
+            let issue = validate_plugin_manifest(&value).expect_err("reject schema version");
+            assert_eq!(issue.code, "manifest.schema-version");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_plugin_ids() {
+        for id in ["Bad", "with space", "-leading", "trailing-", "a..b", "a/b", "UPPER", "", "a b"] {
+            let mut value = valid_manifest_value();
+            value["id"] = serde_json::json!(id);
+            let issue = validate_plugin_manifest(&value).expect_err("reject id");
+            assert_eq!(issue.code, "manifest.id", "id {id:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn accepts_valid_plugin_ids() {
+        for id in ["a", "my-plugin", "org.example.plugin", "a_b.c-d", "my0plugin"] {
+            let mut value = valid_manifest_value();
+            value["id"] = serde_json::json!(id);
+            assert!(validate_plugin_manifest(&value).is_ok(), "id {id:?} should be accepted");
+        }
+    }
+
+    #[test]
+    fn rejects_empty_required_fields() {
+        for key in ["name", "version", "engine", "entry"] {
+            for bad in [serde_json::json!(""), serde_json::json!("   "), serde_json::json!(42)] {
+                let mut value = valid_manifest_value();
+                value[key] = bad;
+                let issue = validate_plugin_manifest(&value).expect_err("reject field");
+                assert_eq!(
+                    issue.code,
+                    format!("manifest.{key}").as_str(),
+                    "field {key} should be rejected"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_relative_entries() {
+        for entry in [
+            "../escape.js",
+            "..\\escape.js",
+            "/abs.js",
+            "\\abs.js",
+            "a/../../b.js",
+            "sub/../x.js",
+        ] {
+            let mut value = valid_manifest_value();
+            value["entry"] = serde_json::json!(entry);
+            let issue = validate_plugin_manifest(&value).expect_err("reject entry");
+            assert_eq!(issue.code, "manifest.entry", "entry {entry:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn accepts_safe_relative_entries() {
+        for entry in ["index.js", "dist/app.js", "sub/folder/main.js", "./rel.js", "a\\b.js", "foo..bar/baz.js"] {
+            let mut value = valid_manifest_value();
+            value["entry"] = serde_json::json!(entry);
+            assert!(validate_plugin_manifest(&value).is_ok(), "entry {entry:?} should be accepted");
+        }
+    }
+
+    #[test]
+    fn rejects_unsupported_and_duplicate_permissions() {
+        let mut unsupported = valid_manifest_value();
+        unsupported["permissions"] = serde_json::json!(["workspace:read", "fs:write"]);
+        let issue = validate_plugin_manifest(&unsupported).expect_err("reject unsupported");
+        assert_eq!(issue.code, "manifest.permissions");
+
+        let mut duplicate = valid_manifest_value();
+        duplicate["permissions"] = serde_json::json!(["workspace:read", "workspace:read"]);
+        let issue = validate_plugin_manifest(&duplicate).expect_err("reject duplicate");
+        assert_eq!(issue.code, "manifest.permissions");
+
+        let mut not_array = valid_manifest_value();
+        not_array["permissions"] = serde_json::json!("workspace:read");
+        let issue = validate_plugin_manifest(&not_array).expect_err("reject non-array");
+        assert_eq!(issue.code, "manifest.permissions");
+
+        let mut missing = valid_manifest_value();
+        missing.as_object_mut().expect("object").remove("permissions");
+        let issue = validate_plugin_manifest(&missing).expect_err("reject missing");
+        assert_eq!(issue.code, "manifest.permissions");
+    }
+
+    #[test]
+    fn plugin_directory_setting_round_trips_through_sqlite() {
+        let connection = open_test_connection();
+        assert_eq!(
+            load_setting(&connection, PLUGIN_DIRECTORY_SETTING_KEY).expect("unset plugin directory"),
+            None
+        );
+        upsert_setting(&connection, PLUGIN_DIRECTORY_SETTING_KEY, "C:\\whybrary-plugins")
+            .expect("set plugin directory");
+        assert_eq!(
+            load_setting(&connection, PLUGIN_DIRECTORY_SETTING_KEY).expect("read plugin directory"),
+            Some("C:\\whybrary-plugins".to_string())
+        );
+    }
+
+    #[test]
+    fn discovery_isolates_failed_plugins() {
+        let root = unique_temp_dir("discovery");
+        let write_file = |relative: &str, contents: &str| {
+            let path = root.join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create parent dir");
+            }
+            fs::write(&path, contents).expect("write file");
+        };
+
+        write_file(
+            "good-plugin/whybrary-plugin.json",
+            r#"{
+                "schemaVersion": 1,
+                "id": "good-plugin",
+                "name": "Good Plugin",
+                "version": "1.0.0",
+                "engine": "whybrary",
+                "entry": "index.js",
+                "permissions": ["workspace:read", "ui:panel"]
+            }"#,
+        );
+        write_file("good-plugin/index.js", "export default {};");
+
+        write_file("bad-json/whybrary-plugin.json", "{ not valid json");
+        write_file("bad-json/index.js", "export default {};");
+
+        write_file(
+            "unsafe-entry/whybrary-plugin.json",
+            r#"{
+                "schemaVersion": 1,
+                "id": "unsafe-entry",
+                "name": "Unsafe",
+                "version": "1.0.0",
+                "engine": "whybrary",
+                "entry": "../escape.js",
+                "permissions": []
+            }"#,
+        );
+
+        write_file(
+            "missing-entry/whybrary-plugin.json",
+            r#"{
+                "schemaVersion": 1,
+                "id": "missing-entry",
+                "name": "Missing",
+                "version": "1.0.0",
+                "engine": "whybrary",
+                "entry": "nope.js",
+                "permissions": []
+            }"#,
+        );
+
+        write_file("no-manifest/keep.txt", "not a plugin");
+
+        let result = discover_plugins_in_directory(&root);
+
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(result.plugins.len(), 1, "only the well-formed plugin should be discovered");
+        assert_eq!(result.plugins[0].id, "good-plugin");
+        assert_eq!(
+            result.plugins[0].entry_path,
+            root.join("good-plugin").join("index.js").display().to_string()
+        );
+        assert_eq!(result.plugins[0].permissions, vec!["workspace:read", "ui:panel"]);
+
+        let codes: Vec<&str> = result.diagnostics.iter().map(|d| d.code.as_str()).collect();
+        assert!(codes.contains(&"manifest.parse"), "bad JSON should produce a parse diagnostic: {codes:?}");
+        assert!(
+            codes.contains(&"manifest.entry"),
+            "unsafe and missing entries should produce entry diagnostics: {codes:?}"
+        );
+        assert_eq!(result.diagnostics.len(), 3, "one diagnostic per failing plugin: {codes:?}");
+        assert!(
+            result.diagnostics.iter().all(|d| !d.path.contains("no-manifest")),
+            "directories without a manifest should be skipped silently"
+        );
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1436,7 +2050,11 @@ pub fn run() {
             save_snapshot,
             load_workspace,
             apply_mutations,
-            replace_workspace
+            replace_workspace,
+            default_plugin_directory,
+            get_plugin_directory,
+            set_plugin_directory,
+            discover_plugins
         ])
         .run(context)
         .expect("error while running Whybrary");

@@ -10,6 +10,16 @@ export function createOfficialPluginRegistry() {
   return registry;
 }
 
-export type { PluginCommand, PluginContext, PluginPanel, PluginViewItem, WhybraryPlugin } from './types';
+export type {
+  PluginCommand,
+  PluginContext,
+  PluginPanel,
+  PluginViewItem,
+  WhybraryPlugin,
+} from './types';
 export { PluginRegistry } from './registry';
+export { validatePluginManifest, PLUGIN_MANIFEST_FILE, PLUGIN_MANIFEST_VERSION } from './manifest';
+export type { PluginManifest, ManifestValidation } from './manifest';
+export { discoverPlugins, getPluginDirectory, setPluginDirectory, parseManifest } from './platform';
+export type { DiscoveredPlugin, PluginDirectoryConfig, PluginDiscoveryResponse } from './platform';
 export { reviewSpace, whyReviewPlugin } from './whyReview';
