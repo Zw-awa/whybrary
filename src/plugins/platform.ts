@@ -49,6 +49,31 @@ export async function discoverPlugins(): Promise<PluginDiscoveryResponse> {
   return { plugins: [], diagnostics: [] };
 }
 
+export type InstalledPlugin = {
+  id: string;
+  version: string;
+  directory: string;
+  source: string;
+  enabled: boolean;
+  approvedPermissions: string[];
+  installedAt: string;
+  updatedAt: string;
+  lastError?: string;
+};
+
+export async function installPlugin(sourcePath: string): Promise<InstalledPlugin> {
+  const result = await invoke<{ state: InstalledPlugin }>('install_plugin', { sourcePath });
+  return result.state;
+}
+
+export async function uninstallPlugin(pluginId: string): Promise<void> {
+  await invoke('uninstall_plugin', { pluginId });
+}
+
+export async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
+  if (inTauri()) return invoke<InstalledPlugin[]>('list_installed_plugins');
+  return [];
+}
 export function fromManifest(
   manifest: PluginManifest,
   source: 'built-in' | 'local' = 'local',

@@ -2,32 +2,37 @@ import { useEffect, useState } from 'react';
 import {
   discoverPlugins,
   getPluginDirectory,
+  installPlugin,
+  listInstalledPlugins,
   setPluginDirectory,
+  uninstallPlugin,
   type DiscoveredPlugin,
+  type InstalledPlugin,
   type PluginDirectoryConfig,
 } from '../plugins/platform';
 import type { AppLocale } from '../types';
 
-type PluginManagerProps = {
-  enabled: boolean;
-  locale: AppLocale;
-};
+type PluginManagerProps = { enabled: boolean; locale: AppLocale };
 
 export function PluginManager({ enabled, locale }: PluginManagerProps) {
   const [directory, setDirectory] = useState<PluginDirectoryConfig | null>(null);
   const [plugins, setPlugins] = useState<DiscoveredPlugin[]>([]);
+  const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
+  const [sourcePath, setSourcePath] = useState('');
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
-      const [nextDirectory, nextPlugins] = await Promise.all([
+      const [nextDirectory, nextPlugins, nextInstalled] = await Promise.all([
         getPluginDirectory(),
         discoverPlugins(),
+        listInstalledPlugins(),
       ]);
       setDirectory(nextDirectory);
       setDraft(nextDirectory.path);
       setPlugins(nextPlugins.plugins);
+      setInstalled(nextInstalled);
       setError(
         nextPlugins.diagnostics
           .map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`)
@@ -42,15 +47,6 @@ export function PluginManager({ enabled, locale }: PluginManagerProps) {
     void refresh();
   }, []);
 
-  const saveDirectory = async () => {
-    try {
-      await setPluginDirectory(draft.trim() || null);
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  };
-
   const strings =
     locale === 'zh'
       ? {
@@ -62,6 +58,10 @@ export function PluginManager({ enabled, locale }: PluginManagerProps) {
           empty: '没有发现插件',
           disabled: '启用插件功能后，才能运行已发现的插件。',
           invalid: '无效插件',
+          install: '安装插件',
+          source: '插件源目录',
+          uninstall: '卸载',
+          installed: '已安装',
         }
       : {
           title: 'Plugin directory',
@@ -72,7 +72,30 @@ export function PluginManager({ enabled, locale }: PluginManagerProps) {
           empty: 'No plugins found',
           disabled: 'Enable plugin support before any discovered plugin can run.',
           invalid: 'Invalid plugin',
+          install: 'Install plugin',
+          source: 'Source plugin folder',
+          uninstall: 'Uninstall',
+          installed: 'Installed',
         };
+
+  const install = async () => {
+    if (!sourcePath.trim()) return;
+    try {
+      await installPlugin(sourcePath.trim());
+      setSourcePath('');
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const uninstall = async (id: string) => {
+    try {
+      await uninstallPlugin(id);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
 
   return (
     <section className="settings-card__section plugin-manager">
@@ -86,21 +109,38 @@ export function PluginManager({ enabled, locale }: PluginManagerProps) {
           onChange={(event) => setDraft(event.target.value)}
           value={draft}
         />
-        <button className="button" onClick={() => void saveDirectory()} type="button">
+        <button
+          className="button"
+          onClick={() => void setPluginDirectory(draft.trim() || null).then(refresh)}
+          type="button"
+        >
           {strings.save}
         </button>
         {!directory?.isDefault ? (
           <button
             className="button button--ghost"
-            onClick={() => {
-              setDraft('');
-              void setPluginDirectory(null).then(refresh);
-            }}
+            onClick={() => void setPluginDirectory(null).then(refresh)}
             type="button"
           >
             {strings.reset}
           </button>
         ) : null}
+      </div>
+      <div className="plugin-manager__directory">
+        <input
+          aria-label={strings.source}
+          onChange={(event) => setSourcePath(event.target.value)}
+          placeholder={strings.source}
+          value={sourcePath}
+        />
+        <button
+          className="button"
+          disabled={!sourcePath.trim()}
+          onClick={() => void install()}
+          type="button"
+        >
+          {strings.install}
+        </button>
       </div>
       <div className="plugin-manager__actions">
         <button className="button button--ghost" onClick={() => void refresh()} type="button">
@@ -113,24 +153,39 @@ export function PluginManager({ enabled, locale }: PluginManagerProps) {
         {plugins.length === 0 ? (
           <li>{strings.empty}</li>
         ) : (
-          plugins.map((plugin) => (
-            <li key={plugin.directory}>
-              {plugin.manifest ? (
-                <>
-                  <strong>{plugin.manifest.name}</strong>
-                  <span>
-                    {plugin.manifest.version} · {plugin.manifest.id}
-                  </span>
-                  <small>{plugin.manifest.permissions.join(', ') || 'No permissions'}</small>
-                </>
-              ) : (
-                <>
-                  <strong>{strings.invalid}</strong>
-                  <small>{plugin.diagnostic}</small>
-                </>
-              )}
-            </li>
-          ))
+          plugins.map((plugin) => {
+            const state = plugin.manifest
+              ? installed.find((item) => item.id === plugin.manifest?.id)
+              : undefined;
+            return (
+              <li key={plugin.directory}>
+                {plugin.manifest ? (
+                  <>
+                    <strong>{plugin.manifest.name}</strong>
+                    <span>
+                      {plugin.manifest.version} · {plugin.manifest.id}
+                      {state ? ` · ${strings.installed}` : ''}
+                    </span>
+                    <small>{plugin.manifest.permissions.join(', ') || 'No permissions'}</small>
+                    {state ? (
+                      <button
+                        className="button button--ghost"
+                        onClick={() => void uninstall(plugin.manifest!.id)}
+                        type="button"
+                      >
+                        {strings.uninstall}
+                      </button>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <strong>{strings.invalid}</strong>
+                    <small>{plugin.diagnostic}</small>
+                  </>
+                )}
+              </li>
+            );
+          })
         )}
       </ul>
     </section>

@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager};
 #[cfg(desktop)]
 use tauri::{LogicalSize, Size};
 
-const LATEST_SCHEMA_VERSION: i32 = 3;
+const LATEST_SCHEMA_VERSION: i32 = 4;
 const SMOKE_MODE_ENV: &str = "WHYBRARY_TAURI_SMOKE";
 const APP_DATA_DIR_OVERRIDE_ENV: &str = "WHYBRARY_APP_DATA_DIR";
 
@@ -22,6 +22,9 @@ const SUPPORTED_PLUGIN_PERMISSIONS: [&str; 5] = [
     "settings:read",
     "settings:write",
 ];
+
+/// Built-in plugin ids shipped with the app. Local installs must not shadow them.
+const RESERVED_BUILT_IN_PLUGIN_IDS: [&str; 1] = ["why-review"];
 
 const MIGRATION_1_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS settings (
@@ -91,6 +94,23 @@ ALTER TABLE nodes ADD COLUMN category TEXT;
 ALTER TABLE nodes ADD COLUMN color TEXT;
 ALTER TABLE todos ADD COLUMN priority TEXT;
 ALTER TABLE todos ADD COLUMN due_date TEXT;
+"#;
+
+const MIGRATION_4_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS plugin_install_state (
+  plugin_id TEXT PRIMARY KEY,
+  version TEXT NOT NULL,
+  directory TEXT NOT NULL,
+  source TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  approved_permissions_json TEXT NOT NULL,
+  installed_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_plugin_install_state_directory
+ON plugin_install_state(directory);
 "#;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -297,6 +317,40 @@ struct PluginManifestInfo {
     permissions: Vec<String>,
     directory: String,
     entry_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state: Option<PluginInstallState>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PluginInstallState {
+    plugin_id: String,
+    version: String,
+    directory: String,
+    source: String,
+    enabled: bool,
+    approved_permissions: Vec<String>,
+    installed_at: String,
+    updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct InstallPluginResponse {
+    plugin: PluginManifestInfo,
+    state: PluginInstallState,
+    replaced: bool,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct UninstallPluginResponse {
+    plugin_id: String,
+    directory: String,
+    removed: bool,
+    state_removed: bool,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -509,6 +563,7 @@ fn load_and_validate_manifest(
         permissions: manifest.permissions,
         directory: directory.display().to_string(),
         entry_path: entry_path.display().to_string(),
+        state: None,
     })
 }
 
@@ -581,6 +636,507 @@ fn discover_plugins_in_directory(directory: &Path) -> DiscoverPluginsResponse {
     DiscoverPluginsResponse { plugins, diagnostics }
 }
 
+/// Attaches persisted install state to each discovered plugin, keyed by plugin id.
+fn merge_installed_state(
+    mut response: DiscoverPluginsResponse,
+    states: Vec<PluginInstallState>,
+) -> DiscoverPluginsResponse {
+    let mut by_id = std::collections::HashMap::new();
+    for state in states {
+        by_id.insert(state.plugin_id.clone(), state);
+    }
+    for plugin in &mut response.plugins {
+        plugin.state = by_id.remove(&plugin.id);
+    }
+    response
+}
+
+fn load_installed_plugin(
+    connection: &Connection,
+    plugin_id: &str,
+) -> Result<Option<PluginInstallState>, String> {
+    let row = connection
+        .query_row(
+            "SELECT plugin_id, version, directory, source, enabled, approved_permissions_json,
+                    installed_at, updated_at, last_error
+             FROM plugin_install_state
+             WHERE plugin_id = ?1",
+            [plugin_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)? != 0,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| format!("Unable to load installed plugin '{plugin_id}': {error}"))?;
+
+    let Some((
+        plugin_id,
+        version,
+        directory,
+        source,
+        enabled,
+        approved_permissions_json,
+        installed_at,
+        updated_at,
+        last_error,
+    )) = row
+    else {
+        return Ok(None);
+    };
+
+    let approved_permissions: Vec<String> = serde_json::from_str(&approved_permissions_json)
+        .map_err(|error| {
+            format!(
+                "Unable to parse approved permissions for installed plugin '{plugin_id}': {error}"
+            )
+        })?;
+
+    Ok(Some(PluginInstallState {
+        plugin_id,
+        version,
+        directory,
+        source,
+        enabled,
+        approved_permissions,
+        installed_at,
+        updated_at,
+        last_error,
+    }))
+}
+
+fn load_all_installed_plugins(connection: &Connection) -> Result<Vec<PluginInstallState>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT plugin_id, version, directory, source, enabled, approved_permissions_json,
+                    installed_at, updated_at, last_error
+             FROM plugin_install_state
+             ORDER BY plugin_id ASC",
+        )
+        .map_err(|error| format!("Unable to prepare installed plugin query: {error}"))?;
+
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)? != 0,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, Option<String>>(8)?,
+            ))
+        })
+        .map_err(|error| format!("Unable to query installed plugins: {error}"))?;
+
+    let mut states = Vec::new();
+    for row in rows {
+        let (
+            plugin_id,
+            version,
+            directory,
+            source,
+            enabled,
+            approved_permissions_json,
+            installed_at,
+            updated_at,
+            last_error,
+        ) = row.map_err(|error| format!("Unable to read installed plugin row: {error}"))?;
+
+        let approved_permissions: Vec<String> = serde_json::from_str(&approved_permissions_json)
+            .map_err(|error| {
+                format!(
+                    "Unable to parse approved permissions for installed plugin '{plugin_id}': {error}"
+                )
+            })?;
+
+        states.push(PluginInstallState {
+            plugin_id,
+            version,
+            directory,
+            source,
+            enabled,
+            approved_permissions,
+            installed_at,
+            updated_at,
+            last_error,
+        });
+    }
+
+    Ok(states)
+}
+
+fn upsert_installed_plugin(
+    connection: &Connection,
+    state: &PluginInstallState,
+) -> Result<(), String> {
+    let approved_permissions_json = serde_json::to_string(&state.approved_permissions)
+        .map_err(|error| format!("Unable to serialize approved permissions: {error}"))?;
+
+    connection
+        .execute(
+            "INSERT INTO plugin_install_state (
+               plugin_id, version, directory, source, enabled, approved_permissions_json,
+               installed_at, updated_at, last_error
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(plugin_id) DO UPDATE SET
+               version = excluded.version,
+               directory = excluded.directory,
+               source = excluded.source,
+               enabled = excluded.enabled,
+               approved_permissions_json = excluded.approved_permissions_json,
+               installed_at = excluded.installed_at,
+               updated_at = excluded.updated_at,
+               last_error = excluded.last_error",
+            params![
+                state.plugin_id,
+                state.version,
+                state.directory,
+                state.source,
+                if state.enabled { 1 } else { 0 },
+                approved_permissions_json,
+                state.installed_at,
+                state.updated_at,
+                state.last_error,
+            ],
+        )
+        .map_err(|error| {
+            format!(
+                "Unable to upsert installed plugin '{}': {error}",
+                state.plugin_id
+            )
+        })?;
+
+    Ok(())
+}
+
+fn delete_installed_plugin(connection: &Connection, plugin_id: &str) -> Result<(), String> {
+    connection
+        .execute(
+            "DELETE FROM plugin_install_state WHERE plugin_id = ?1",
+            [plugin_id],
+        )
+        .map_err(|error| format!("Unable to delete installed plugin '{plugin_id}': {error}"))?;
+    Ok(())
+}
+
+/// Format the current time as a UTC ISO-8601 timestamp with milliseconds, e.g.
+/// "2026-01-01T00:00:00.000Z", matching the timestamps used elsewhere in the app.
+fn iso_timestamp_now() -> String {
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let total_seconds = duration.as_secs() as i64;
+    let millis = duration.subsec_millis();
+    let days = total_seconds.div_euclid(86_400);
+    let seconds_of_day = total_seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{millis:03}Z",
+        seconds_of_day / 3600,
+        (seconds_of_day % 3600) / 60,
+        seconds_of_day % 60,
+    )
+}
+
+/// Convert days since the Unix epoch into a (year, month, day) civil date.
+/// Public-domain algorithm by Howard Hinnant.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = (day_of_year - (153 * month_prime + 2) / 5 + 1) as u32;
+    let month = if month_prime < 10 {
+        month_prime + 3
+    } else {
+        month_prime - 9
+    } as u32;
+    (if month <= 2 { year + 1 } else { year }, month, day)
+}
+
+/// Recursively copies `source` into `destination`, rejecting symbolic links so a
+/// plugin cannot smuggle a link that points outside its own directory.
+fn copy_dir_recursively(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|error| {
+        format!(
+            "Unable to create staging directory '{}': {error}",
+            destination.display()
+        )
+    })?;
+
+    let entries = fs::read_dir(source).map_err(|error| {
+        format!(
+            "Unable to read plugin source '{}': {error}",
+            source.display()
+        )
+    })?;
+
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("Unable to inspect plugin source entry: {error}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("Unable to inspect plugin source entry type: {error}"))?;
+        let target = destination.join(entry.file_name());
+
+        if file_type.is_symlink() {
+            return Err(format!(
+                "Plugin source '{}' contains a symbolic link '{}', which is not allowed.",
+                source.display(),
+                entry.path().display()
+            ));
+        }
+        if file_type.is_dir() {
+            copy_dir_recursively(&entry.path(), &target)?;
+        } else if file_type.is_file() {
+            fs::copy(entry.path(), &target).map_err(|error| {
+                format!(
+                    "Unable to copy '{}' into staging: {error}",
+                    entry.path().display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Guards against installing a plugin anywhere outside `plugin_directory`.
+fn ensure_plugin_target_within(
+    plugin_directory: &Path,
+    target: &Path,
+    plugin_id: &str,
+) -> Result<(), String> {
+    let Some(parent) = target.parent() else {
+        return Err("Plugin target has no parent directory.".to_string());
+    };
+    if parent != plugin_directory {
+        return Err(format!(
+            "Refusing to touch plugin outside the configured plugin directory: '{}'.",
+            target.display()
+        ));
+    }
+    if target.file_name().and_then(|name| name.to_str()) != Some(plugin_id) {
+        return Err(format!(
+            "Refusing to touch plugin with mismatched target name: '{}'.",
+            target.display()
+        ));
+    }
+    Ok(())
+}
+
+fn remove_existing_path(target: &Path) -> Result<(), String> {
+    if target.is_dir() {
+        fs::remove_dir_all(target)
+            .map_err(|error| format!("Unable to remove directory '{}': {error}", target.display()))
+    } else if target.exists() {
+        fs::remove_file(target)
+            .map_err(|error| format!("Unable to remove file '{}': {error}", target.display()))
+    } else {
+        Ok(())
+    }
+}
+
+fn install_plugin_core(
+    source_path: &Path,
+    plugin_directory: &Path,
+    connection: &Connection,
+) -> Result<InstallPluginResponse, String> {
+    let source_metadata = fs::metadata(source_path).map_err(|error| {
+        format!(
+            "Unable to read plugin source '{}': {error}",
+            source_path.display()
+        )
+    })?;
+    if !source_metadata.is_dir() {
+        return Err(format!(
+            "Plugin source '{}' must be a directory.",
+            source_path.display()
+        ));
+    }
+
+    let source_manifest_path = source_path.join(PLUGIN_MANIFEST_FILE);
+    let validated = load_and_validate_manifest(&source_manifest_path, source_path)
+        .map_err(|issue| format!("{}: {}", issue.code, issue.message))?;
+
+    if RESERVED_BUILT_IN_PLUGIN_IDS.contains(&validated.id.as_str()) {
+        return Err(format!(
+            "Plugin id '{}' is reserved for a built-in plugin and cannot be installed.",
+            validated.id
+        ));
+    }
+
+    fs::create_dir_all(plugin_directory).map_err(|error| {
+        format!(
+            "Unable to create plugin directory '{}': {error}",
+            plugin_directory.display()
+        )
+    })?;
+
+    let target = plugin_directory.join(&validated.id);
+    ensure_plugin_target_within(plugin_directory, &target, &validated.id)?;
+
+    let staging_root = plugin_directory.join(".staging");
+    let staging = staging_root.join(format!(
+        "{}-{}-{}",
+        validated.id,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0)
+    ));
+
+    let cleanup_staging = || -> Result<(), String> {
+        match fs::remove_dir_all(&staging) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!(
+                "Unable to clean up staging directory '{}': {error}",
+                staging.display()
+            )),
+        }
+    };
+
+    copy_dir_recursively(source_path, &staging).map_err(|error| {
+        let _ = cleanup_staging();
+        error
+    })?;
+
+    let staged = match load_and_validate_manifest(&staging.join(PLUGIN_MANIFEST_FILE), &staging) {
+        Ok(staged) => staged,
+        Err(error) => {
+            let _ = cleanup_staging();
+            return Err(format!(
+                "Installed copy failed validation ({}): {}",
+                error.code, error.message
+            ));
+        }
+    };
+    if staged.id != validated.id {
+        let _ = cleanup_staging();
+        return Err(format!(
+            "Installed copy manifest id '{}' does not match source id '{}'.",
+            staged.id, validated.id
+        ));
+    }
+
+    let replaced = target.exists();
+    if replaced {
+        remove_existing_path(&target).map_err(|error| {
+            let _ = cleanup_staging();
+            format!(
+                "Unable to replace existing plugin '{}': {error}",
+                target.display()
+            )
+        })?;
+    }
+
+    fs::rename(&staging, &target).map_err(|error| {
+        let _ = cleanup_staging();
+        format!(
+            "Unable to move staged plugin into '{}': {error}",
+            target.display()
+        )
+    })?;
+
+    let now = iso_timestamp_now();
+    let state = PluginInstallState {
+        plugin_id: staged.id.clone(),
+        version: staged.version.clone(),
+        directory: target.display().to_string(),
+        source: "local".to_string(),
+        enabled: true,
+        approved_permissions: staged.permissions.clone(),
+        installed_at: now.clone(),
+        updated_at: now,
+        last_error: None,
+    };
+    upsert_installed_plugin(connection, &state)?;
+
+    let directory = target.display().to_string();
+    let entry_path = target.join(&staged.entry).display().to_string();
+    let plugin = PluginManifestInfo {
+        schema_version: staged.schema_version,
+        id: staged.id,
+        name: staged.name,
+        version: staged.version,
+        engine: staged.engine,
+        entry: staged.entry,
+        permissions: staged.permissions,
+        directory,
+        entry_path,
+        state: None,
+    };
+
+    Ok(InstallPluginResponse {
+        plugin,
+        state,
+        replaced,
+    })
+}
+
+fn uninstall_plugin_core(
+    plugin_id: &str,
+    plugin_directory: &Path,
+    connection: &Connection,
+) -> Result<UninstallPluginResponse, String> {
+    if !is_valid_plugin_id(plugin_id) {
+        return Err(format!("Invalid plugin id '{plugin_id}'."));
+    }
+
+    let state = load_installed_plugin(connection, plugin_id)?;
+    let target = match &state {
+        Some(state) => PathBuf::from(&state.directory),
+        None => plugin_directory.join(plugin_id),
+    };
+
+    ensure_plugin_target_within(plugin_directory, &target, plugin_id)?;
+    if target == plugin_directory {
+        return Err("Refusing to remove the plugin directory itself.".to_string());
+    }
+
+    let existed = target.exists();
+    let removed = match remove_existing_path(&target) {
+        Ok(()) => existed,
+        Err(error) => {
+            return Err(format!(
+                "Unable to remove plugin directory '{}': {error}",
+                target.display()
+            ))
+        }
+    };
+
+    let state_removed = state.is_some();
+    if state_removed {
+        delete_installed_plugin(connection, plugin_id)?;
+    }
+
+    Ok(UninstallPluginResponse {
+        plugin_id: plugin_id.to_string(),
+        directory: target.display().to_string(),
+        removed,
+        state_removed,
+    })
+}
+
 fn configure_connection(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch("PRAGMA foreign_keys = ON;")
@@ -620,6 +1176,13 @@ fn migrate_to_v3(connection: &Connection) -> Result<(), String> {
     set_schema_version(connection, 3)
 }
 
+fn migrate_to_v4(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(MIGRATION_4_SQL)
+        .map_err(|error| format!("Unable to apply SQLite migration 3 -> 4: {error}"))?;
+    set_schema_version(connection, 4)
+}
+
 fn run_migrations(connection: &Connection) -> Result<(), String> {
     let mut version = load_schema_version(connection)?;
     if version > LATEST_SCHEMA_VERSION {
@@ -633,6 +1196,7 @@ fn run_migrations(connection: &Connection) -> Result<(), String> {
             0 => migrate_to_v1(connection)?,
             1 => migrate_to_v2(connection)?,
             2 => migrate_to_v3(connection)?,
+            3 => migrate_to_v4(connection)?,
             _ => {
                 return Err(format!(
                     "No SQLite migration path from version {version} to {LATEST_SCHEMA_VERSION}."
@@ -1334,7 +1898,33 @@ fn set_plugin_directory(app: AppHandle, path: Option<String>) -> Result<PluginDi
 #[tauri::command]
 fn discover_plugins(app: AppHandle) -> Result<DiscoverPluginsResponse, String> {
     let directory = resolve_plugin_directory(&app)?;
-    Ok(discover_plugins_in_directory(&directory))
+    let response = discover_plugins_in_directory(&directory);
+
+    let connection = open_connection(&app)?;
+    Ok(merge_installed_state(response, load_all_installed_plugins(&connection)?))
+}
+
+#[tauri::command]
+fn install_plugin(app: AppHandle, source_path: String) -> Result<InstallPluginResponse, String> {
+    if source_path.trim().is_empty() {
+        return Err("Plugin source path must not be empty.".to_string());
+    }
+    let plugin_directory = resolve_plugin_directory(&app)?;
+    let connection = open_connection(&app)?;
+    install_plugin_core(Path::new(&source_path), &plugin_directory, &connection)
+}
+
+#[tauri::command]
+fn uninstall_plugin(app: AppHandle, plugin_id: String) -> Result<UninstallPluginResponse, String> {
+    let plugin_directory = resolve_plugin_directory(&app)?;
+    let connection = open_connection(&app)?;
+    uninstall_plugin_core(&plugin_id, &plugin_directory, &connection)
+}
+
+#[tauri::command]
+fn list_installed_plugins(app: AppHandle) -> Result<Vec<PluginInstallState>, String> {
+    let connection = open_connection(&app)?;
+    load_all_installed_plugins(&connection)
 }
 
 fn smoke_report_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -1975,6 +2565,424 @@ mod tests {
             "directories without a manifest should be skipped silently"
         );
     }
+
+    fn write_plugin_source(
+        root: &Path,
+        name: &str,
+        id: &str,
+        version: &str,
+        entry: &str,
+    ) -> PathBuf {
+        let source = root.join(name);
+        fs::create_dir_all(&source).expect("create plugin source dir");
+        fs::write(
+            source.join("whybrary-plugin.json"),
+            format!(
+                r#"{{
+                    "schemaVersion": 1,
+                    "id": "{id}",
+                    "name": "{id}",
+                    "version": "{version}",
+                    "engine": "whybrary",
+                    "entry": "{entry}",
+                    "permissions": ["workspace:read", "ui:panel"]
+                }}"#
+            ),
+        )
+        .expect("write plugin manifest");
+        fs::write(source.join(entry), "export default {};").expect("write plugin entry");
+        source
+    }
+
+    #[test]
+    fn fresh_db_creates_plugin_install_state_table() {
+        let connection = open_test_connection();
+
+        assert_eq!(
+            load_schema_version(&connection).expect("schema version"),
+            LATEST_SCHEMA_VERSION
+        );
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'plugin_install_state'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("table lookup");
+        assert_eq!(count, 1, "plugin_install_state table missing");
+
+        for column in [
+            "plugin_id",
+            "version",
+            "directory",
+            "source",
+            "enabled",
+            "approved_permissions_json",
+            "installed_at",
+            "updated_at",
+            "last_error",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('plugin_install_state') WHERE name = ?1",
+                    [column],
+                    |row| row.get(0),
+                )
+                .expect("column lookup");
+            assert_eq!(count, 1, "missing column {column}");
+        }
+    }
+
+    #[test]
+    fn migrates_v3_schema_to_v4_creating_install_state_table() {
+        let connection = Connection::open_in_memory().expect("in-memory sqlite");
+        configure_connection(&connection).expect("configure connection");
+        connection
+            .execute_batch(MIGRATION_1_SQL)
+            .expect("v1 schema");
+        connection
+            .execute_batch(MIGRATION_2_SQL)
+            .expect("v2 schema");
+        connection
+            .execute_batch(MIGRATION_3_SQL)
+            .expect("v3 schema");
+        set_schema_version(&connection, 3).expect("set v3 schema version");
+
+        run_migrations(&connection).expect("migrate to latest");
+
+        assert_eq!(
+            load_schema_version(&connection).expect("schema version"),
+            LATEST_SCHEMA_VERSION
+        );
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'plugin_install_state'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("table lookup");
+        assert_eq!(
+            count, 1,
+            "plugin_install_state table missing after v3 -> v4"
+        );
+    }
+
+    #[test]
+    fn installed_plugin_state_round_trips_through_sqlite() {
+        let connection = open_test_connection();
+        assert_eq!(
+            load_installed_plugin(&connection, "my-plugin").expect("missing state"),
+            None
+        );
+
+        let state = PluginInstallState {
+            plugin_id: "my-plugin".to_string(),
+            version: "1.0.0".to_string(),
+            directory: "C:\\plugins\\my-plugin".to_string(),
+            source: "local".to_string(),
+            enabled: true,
+            approved_permissions: vec!["workspace:read".to_string(), "ui:panel".to_string()],
+            installed_at: "2026-01-01T00:00:00.000Z".to_string(),
+            updated_at: "2026-01-01T00:00:00.000Z".to_string(),
+            last_error: None,
+        };
+        upsert_installed_plugin(&connection, &state).expect("upsert state");
+        assert_eq!(
+            load_installed_plugin(&connection, "my-plugin").expect("load state"),
+            Some(state.clone())
+        );
+
+        let mut updated = state.clone();
+        updated.version = "2.0.0".to_string();
+        updated.enabled = false;
+        updated.last_error = Some("activation failed".to_string());
+        upsert_installed_plugin(&connection, &updated).expect("re-upsert state");
+        assert_eq!(
+            load_installed_plugin(&connection, "my-plugin").expect("reload state"),
+            Some(updated)
+        );
+
+        delete_installed_plugin(&connection, "my-plugin").expect("delete state");
+        assert_eq!(
+            load_installed_plugin(&connection, "my-plugin").expect("missing after delete"),
+            None
+        );
+    }
+
+    #[test]
+    fn iso_timestamp_now_is_utc_iso8601() {
+        let stamp = iso_timestamp_now();
+        assert_eq!(
+            stamp.len(),
+            24,
+            "expected 2026-01-01T00:00:00.000Z shape, got {stamp}"
+        );
+        assert!(stamp.ends_with('Z'), "expected UTC marker, got {stamp}");
+        assert_eq!(&stamp[4..5], "-");
+        assert_eq!(&stamp[7..8], "-");
+        assert_eq!(&stamp[10..11], "T");
+        assert_eq!(&stamp[19..20], ".");
+    }
+
+    #[test]
+    fn installs_plugin_into_configured_directory_and_upserts_state() {
+        let root = unique_temp_dir("install");
+        let plugin_dir = root.join("plugins");
+        let source = write_plugin_source(&root, "source", "installed-plugin", "1.0.0", "index.js");
+
+        let connection = open_test_connection();
+        let response = install_plugin_core(&source, &plugin_dir, &connection).expect("install");
+
+        assert!(!response.replaced);
+        assert_eq!(response.plugin.id, "installed-plugin");
+        assert_eq!(
+            response.state.directory,
+            plugin_dir.join("installed-plugin").display().to_string()
+        );
+        assert!(response.state.enabled);
+        assert!(plugin_dir
+            .join("installed-plugin")
+            .join("index.js")
+            .is_file());
+
+        let state = load_installed_plugin(&connection, "installed-plugin")
+            .expect("load state")
+            .expect("state exists");
+        assert_eq!(state.version, "1.0.0");
+        assert_eq!(state.source, "local");
+        assert_eq!(
+            state.approved_permissions,
+            vec!["workspace:read", "ui:panel"]
+        );
+        assert_eq!(state.last_error, None);
+
+        let listed = load_all_installed_plugins(&connection).expect("list states");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].plugin_id, "installed-plugin");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reinstall_replaces_existing_target_after_validation() {
+        let root = unique_temp_dir("reinstall");
+        let plugin_dir = root.join("plugins");
+        let source =
+            write_plugin_source(&root, "source", "reinstalled-plugin", "1.0.0", "index.js");
+        fs::write(source.join("legacy.txt"), "old").expect("write legacy file");
+
+        let connection = open_test_connection();
+        let first = install_plugin_core(&source, &plugin_dir, &connection).expect("first install");
+        assert!(!first.replaced);
+        assert!(plugin_dir
+            .join("reinstalled-plugin")
+            .join("legacy.txt")
+            .is_file());
+
+        fs::remove_file(source.join("legacy.txt")).expect("drop legacy file");
+        fs::write(source.join("new.txt"), "new").expect("write new file");
+        let manifest_path = source.join("whybrary-plugin.json");
+        let manifest_text = fs::read_to_string(&manifest_path).expect("read manifest");
+        fs::write(
+            &manifest_path,
+            manifest_text.replace("\"1.0.0\"", "\"2.0.0\""),
+        )
+        .expect("rewrite manifest");
+
+        let second =
+            install_plugin_core(&source, &plugin_dir, &connection).expect("second install");
+        assert!(second.replaced);
+        assert_eq!(second.plugin.version, "2.0.0");
+        assert!(!plugin_dir
+            .join("reinstalled-plugin")
+            .join("legacy.txt")
+            .exists());
+        assert!(plugin_dir
+            .join("reinstalled-plugin")
+            .join("new.txt")
+            .is_file());
+
+        let state = load_installed_plugin(&connection, "reinstalled-plugin")
+            .expect("load state")
+            .expect("state exists");
+        assert_eq!(state.version, "2.0.0");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn install_rejects_non_directory_source() {
+        let root = unique_temp_dir("install-file");
+        let plugin_dir = root.join("plugins");
+        let source = root.join("not-a-dir.txt");
+        fs::write(&source, "nope").expect("write file");
+
+        let connection = open_test_connection();
+        let error =
+            install_plugin_core(&source, &plugin_dir, &connection).expect_err("reject file");
+        assert!(
+            error.contains("must be a directory"),
+            "unexpected error: {error}"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn install_rejects_unsafe_entry_without_staging_leftovers() {
+        let root = unique_temp_dir("install-unsafe");
+        let plugin_dir = root.join("plugins");
+        let source = root.join("unsafe-source");
+        fs::create_dir_all(&source).expect("create source");
+        fs::write(
+            source.join("whybrary-plugin.json"),
+            r#"{
+                "schemaVersion": 1,
+                "id": "unsafe-plugin",
+                "name": "Unsafe",
+                "version": "1.0.0",
+                "engine": "whybrary",
+                "entry": "../escape.js",
+                "permissions": []
+            }"#,
+        )
+        .expect("write manifest");
+        fs::write(source.join("escape.js"), "x").expect("write entry");
+
+        let connection = open_test_connection();
+        let error = install_plugin_core(&source, &plugin_dir, &connection)
+            .expect_err("reject unsafe entry");
+        assert!(
+            error.contains("must remain inside"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            !plugin_dir.exists(),
+            "no plugin directory should be created before validation"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn install_rejects_reserved_builtin_id() {
+        let root = unique_temp_dir("install-reserved");
+        let plugin_dir = root.join("plugins");
+        let source = write_plugin_source(&root, "why-review", "why-review", "9.9.9", "index.js");
+
+        let connection = open_test_connection();
+        let error =
+            install_plugin_core(&source, &plugin_dir, &connection).expect_err("reject reserved");
+        assert!(
+            error.contains("reserved for a built-in plugin"),
+            "unexpected error: {error}"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn uninstall_removes_directory_and_state() {
+        let root = unique_temp_dir("uninstall");
+        let plugin_dir = root.join("plugins");
+        let source = write_plugin_source(&root, "source", "victim-plugin", "1.0.0", "index.js");
+
+        let connection = open_test_connection();
+        install_plugin_core(&source, &plugin_dir, &connection).expect("install");
+
+        let response =
+            uninstall_plugin_core("victim-plugin", &plugin_dir, &connection).expect("uninstall");
+        assert!(response.removed);
+        assert!(response.state_removed);
+        assert!(!plugin_dir.join("victim-plugin").exists());
+        assert_eq!(
+            load_installed_plugin(&connection, "victim-plugin").expect("load"),
+            None
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn uninstall_rejects_invalid_plugin_id() {
+        let root = unique_temp_dir("uninstall-invalid");
+        let plugin_dir = root.join("plugins");
+        let connection = open_test_connection();
+
+        let error =
+            uninstall_plugin_core("../escape", &plugin_dir, &connection).expect_err("reject id");
+        assert!(
+            error.contains("Invalid plugin id"),
+            "unexpected error: {error}"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn uninstall_refuses_directory_outside_configured_directory() {
+        let root = unique_temp_dir("uninstall-outside");
+        let plugin_dir = root.join("plugins");
+        let outside = root.join("elsewhere").join("victim-plugin");
+        fs::create_dir_all(&outside).expect("create outside dir");
+
+        let connection = open_test_connection();
+        upsert_installed_plugin(
+            &connection,
+            &PluginInstallState {
+                plugin_id: "victim-plugin".to_string(),
+                version: "1.0.0".to_string(),
+                directory: outside.display().to_string(),
+                source: "local".to_string(),
+                enabled: true,
+                approved_permissions: vec![],
+                installed_at: "2026-01-01T00:00:00.000Z".to_string(),
+                updated_at: "2026-01-01T00:00:00.000Z".to_string(),
+                last_error: None,
+            },
+        )
+        .expect("seed state");
+
+        let error = uninstall_plugin_core("victim-plugin", &plugin_dir, &connection)
+            .expect_err("refuse outside");
+        assert!(
+            error.contains("outside the configured plugin directory"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            outside.exists(),
+            "directory outside the configured plugin dir must survive"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn discovery_merges_installed_state_by_plugin_id() {
+        let root = unique_temp_dir("merge-state");
+        write_plugin_source(&root, "good-plugin", "good-plugin", "1.0.0", "index.js");
+
+        let response = discover_plugins_in_directory(&root);
+        assert_eq!(response.plugins.len(), 1);
+        assert_eq!(response.plugins[0].state, None);
+
+        let state = PluginInstallState {
+            plugin_id: "good-plugin".to_string(),
+            version: "1.0.0".to_string(),
+            directory: root.join("good-plugin").display().to_string(),
+            source: "local".to_string(),
+            enabled: false,
+            approved_permissions: vec!["workspace:read".to_string()],
+            installed_at: "2026-01-01T00:00:00.000Z".to_string(),
+            updated_at: "2026-01-01T00:00:00.000Z".to_string(),
+            last_error: Some("boom".to_string()),
+        };
+        let merged = merge_installed_state(response, vec![state.clone()]);
+        assert_eq!(merged.plugins[0].state, Some(state));
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2054,7 +3062,10 @@ pub fn run() {
             default_plugin_directory,
             get_plugin_directory,
             set_plugin_directory,
-            discover_plugins
+            discover_plugins,
+            install_plugin,
+            uninstall_plugin,
+            list_installed_plugins
         ])
         .run(context)
         .expect("error while running Whybrary");
