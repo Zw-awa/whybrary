@@ -1058,14 +1058,28 @@ fn install_plugin_core(
     })?;
 
     let now = iso_timestamp_now();
+    let previous_state = load_installed_plugin(connection, &staged.id)?;
     let state = PluginInstallState {
         plugin_id: staged.id.clone(),
         version: staged.version.clone(),
         directory: target.display().to_string(),
         source: "local".to_string(),
-        enabled: true,
-        approved_permissions: staged.permissions.clone(),
-        installed_at: now.clone(),
+        enabled: previous_state.as_ref().is_some_and(|previous| previous.enabled),
+        approved_permissions: previous_state
+            .as_ref()
+            .map(|previous| {
+                previous
+                    .approved_permissions
+                    .iter()
+                    .filter(|permission| staged.permissions.contains(permission))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default(),
+        installed_at: previous_state
+            .as_ref()
+            .map(|previous| previous.installed_at.clone())
+            .unwrap_or_else(|| now.clone()),
         updated_at: now,
         last_error: None,
     };
@@ -1922,6 +1936,33 @@ fn uninstall_plugin(app: AppHandle, plugin_id: String) -> Result<UninstallPlugin
 }
 
 #[tauri::command]
+fn set_plugin_state(
+    app: AppHandle,
+    plugin_id: String,
+    enabled: bool,
+    approved_permissions: Vec<String>,
+) -> Result<PluginInstallState, String> {
+    if !is_valid_plugin_id(&plugin_id) {
+        return Err("Plugin id is invalid.".to_string());
+    }
+    let connection = open_connection(&app)?;
+    let mut state = load_installed_plugin(&connection, &plugin_id)?
+        .ok_or_else(|| format!("Plugin '{plugin_id}' is not installed."))?;
+    let manifest = discover_plugins_in_directory(&resolve_plugin_directory(&app)?).plugins
+        .into_iter()
+        .find(|plugin| plugin.id == plugin_id)
+        .ok_or_else(|| format!("Plugin '{plugin_id}' is not discoverable."))?;
+    if approved_permissions.iter().any(|permission| !manifest.permissions.contains(permission)) {
+        return Err("Approved permissions must be declared by the plugin manifest.".to_string());
+    }
+    state.enabled = enabled;
+    state.approved_permissions = approved_permissions;
+    state.updated_at = iso_timestamp_now();
+    upsert_installed_plugin(&connection, &state)?;
+    Ok(state)
+}
+
+#[tauri::command]
 fn list_installed_plugins(app: AppHandle) -> Result<Vec<PluginInstallState>, String> {
     let connection = open_connection(&app)?;
     load_all_installed_plugins(&connection)
@@ -2740,7 +2781,8 @@ mod tests {
             response.state.directory,
             plugin_dir.join("installed-plugin").display().to_string()
         );
-        assert!(response.state.enabled);
+        assert!(!response.state.enabled);
+        assert!(response.state.approved_permissions.is_empty());
         assert!(plugin_dir
             .join("installed-plugin")
             .join("index.js")
@@ -2751,10 +2793,7 @@ mod tests {
             .expect("state exists");
         assert_eq!(state.version, "1.0.0");
         assert_eq!(state.source, "local");
-        assert_eq!(
-            state.approved_permissions,
-            vec!["workspace:read", "ui:panel"]
-        );
+        assert!(state.approved_permissions.is_empty());
         assert_eq!(state.last_error, None);
 
         let listed = load_all_installed_plugins(&connection).expect("list states");
@@ -3065,6 +3104,7 @@ pub fn run() {
             discover_plugins,
             install_plugin,
             uninstall_plugin,
+            set_plugin_state,
             list_installed_plugins
         ])
         .run(context)
