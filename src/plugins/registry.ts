@@ -29,12 +29,21 @@ export class PluginRegistry {
     };
   }
 
-  enable(id: string, context: Omit<PluginContext, 'registerPanel' | 'registerCommand'>): void {
+  enable(
+    id: string,
+    context: Omit<PluginContext, 'registerPanel' | 'registerCommand'>,
+    approvedPermissions: WhybraryPlugin['permissions'] = [],
+  ): void {
     const record = this.records.get(id);
     if (!record || record.status === 'active' || record.status === 'activating') return;
+    const approved = new Set(approvedPermissions);
+    const declared = new Set(record.plugin.permissions ?? []);
+    const can = (permission: string) =>
+      approved.has(permission as never) && declared.has(permission as never);
     record.status = 'activating';
     record.error = undefined;
     const registerPanel = (panel: PluginPanel) => {
+      if (!can('ui:panel')) throw new Error(`Plugin ${id} is not approved for ui:panel.`);
       if (this.panels.has(panel.id)) throw new Error(`Duplicate plugin panel: ${panel.id}`);
       this.panels.set(panel.id, { owner: id, panel });
       const dispose = () => this.panels.delete(panel.id);
@@ -42,6 +51,8 @@ export class PluginRegistry {
       return dispose;
     };
     const registerCommand = (command: PluginCommand) => {
+      if (!can('commands:register'))
+        throw new Error(`Plugin ${id} is not approved for commands:register.`);
       if (this.commands.has(command.id)) throw new Error(`Duplicate plugin command: ${command.id}`);
       this.commands.set(command.id, { owner: id, command });
       const dispose = () => this.commands.delete(command.id);
@@ -49,7 +60,17 @@ export class PluginRegistry {
       return dispose;
     };
     try {
-      const dispose = record.plugin.activate({ ...context, registerPanel, registerCommand });
+      const pluginContext: PluginContext = {
+        ...context,
+        getSnapshot: can('workspace:read')
+          ? context.getSnapshot
+          : () => {
+              throw new Error(`Plugin ${id} is not approved for workspace:read.`);
+            },
+        registerPanel,
+        registerCommand,
+      };
+      const dispose = record.plugin.activate(pluginContext);
       if (dispose) record.disposers.push(dispose);
       record.status = 'active';
     } catch (error) {
@@ -72,8 +93,11 @@ export class PluginRegistry {
     record.error = undefined;
   }
 
-  activate(context: Omit<PluginContext, 'registerPanel' | 'registerCommand'>): () => void {
-    for (const id of this.records.keys()) this.enable(id, context);
+  activate(
+    context: Omit<PluginContext, 'registerPanel' | 'registerCommand'>,
+    approvedPermissions: Record<string, WhybraryPlugin['permissions']> = {},
+  ): () => void {
+    for (const id of this.records.keys()) this.enable(id, context, approvedPermissions[id] ?? []);
     return () => this.disposeAll();
   }
 

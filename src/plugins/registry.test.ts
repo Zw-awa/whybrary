@@ -11,6 +11,7 @@ describe('PluginRegistry', () => {
       id: 'test',
       name: 'Test',
       version: '1.0.0',
+      permissions: ['ui:panel'],
       activate(pluginContext) {
         const panel = pluginContext.registerPanel({
           id: 'test.panel',
@@ -24,7 +25,7 @@ describe('PluginRegistry', () => {
         };
       },
     });
-    const dispose = registry.activate(context);
+    const dispose = registry.activate(context, { test: ['ui:panel'] });
     expect(registry.listPanels()).toHaveLength(1);
     dispose();
     expect(registry.listPanels()).toHaveLength(0);
@@ -37,6 +38,7 @@ describe('PluginRegistry', () => {
       id: 'first',
       name: 'First',
       version: '1',
+      permissions: ['ui:panel'],
       activate: (ctx) =>
         ctx.registerPanel({
           id: 'first.panel',
@@ -49,6 +51,7 @@ describe('PluginRegistry', () => {
       id: 'second',
       name: 'Second',
       version: '1',
+      permissions: ['ui:panel'],
       activate: (ctx) =>
         ctx.registerPanel({
           id: 'second.panel',
@@ -57,7 +60,7 @@ describe('PluginRegistry', () => {
           getItems: () => [],
         }),
     });
-    registry.activate(context);
+    registry.activate(context, { first: ['ui:panel'], second: ['ui:panel'] });
     registry.disable('first');
     expect(registry.listPanels().map((panel) => panel.id)).toEqual(['second.panel']);
     expect(registry.listRuntime()).toEqual(
@@ -82,6 +85,7 @@ describe('PluginRegistry', () => {
       id: 'healthy',
       name: 'Healthy',
       version: '1',
+      permissions: ['ui:panel'],
       activate: (ctx) =>
         ctx.registerPanel({
           id: 'healthy.panel',
@@ -90,7 +94,7 @@ describe('PluginRegistry', () => {
           getItems: () => [],
         }),
     });
-    registry.activate(context);
+    registry.activate(context, { healthy: ['ui:panel'] });
     expect(registry.listPanels().map((panel) => panel.id)).toEqual(['healthy.panel']);
     expect(registry.listRuntime()).toEqual(
       expect.arrayContaining([
@@ -99,6 +103,28 @@ describe('PluginRegistry', () => {
     );
   });
 
+  it('denies capabilities that are not approved', () => {
+    const registry = new PluginRegistry();
+    registry.add({
+      id: 'restricted',
+      name: 'Restricted',
+      version: '1',
+      permissions: ['workspace:read', 'ui:panel'],
+      activate: (ctx) => {
+        expect(() => ctx.getSnapshot()).toThrow('workspace:read');
+        expect(() =>
+          ctx.registerPanel({
+            id: 'restricted.panel',
+            title: 'x',
+            description: 'x',
+            getItems: () => [],
+          }),
+        ).toThrow('ui:panel');
+      },
+    });
+    registry.activate(context, { restricted: [] });
+    expect(registry.listRuntime()[0]).toMatchObject({ id: 'restricted', status: 'active' });
+  });
   it('rejects duplicate plugin ids', () => {
     const registry = new PluginRegistry();
     const plugin = { id: 'same', name: 'Same', version: '1', activate: () => undefined };

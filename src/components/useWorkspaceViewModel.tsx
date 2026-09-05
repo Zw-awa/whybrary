@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createOfficialPluginRegistry } from '../plugins';
+import { listInstalledPlugins } from '../plugins/platform';
+import type { PluginPermission } from '../plugins/types';
 import type { AppDialogState } from './AppDialog';
 import { getCopy } from '../lib/i18n';
 import type { AppLocale, AppSnapshot, BrainNode, Space, ThemeMode } from '../types';
@@ -9,6 +11,7 @@ import { useSnapshotTransferController } from './useSnapshotTransferController';
 
 const ADVANCED_FEATURES_KEY = 'whybrary.ui.advancedFeatures';
 const PLUGINS_ENABLED_KEY = 'whybrary.plugins.enabled';
+const pluginPermissions = (permissions: string[]): PluginPermission[] => permissions as PluginPermission[];
 
 type Commands = {
   preferences: {
@@ -119,22 +122,45 @@ export function useWorkspaceViewModel({
     () => window.localStorage.getItem(PLUGINS_ENABLED_KEY) === 'true',
   );
   const [pluginsActivated, setPluginsActivated] = useState(false);
+  const [installedPluginStates, setInstalledPluginStates] = useState<
+    Record<string, { enabled: boolean; approvedPermissions: string[] }>
+  >({});
   const pluginRegistry = useMemo(() => createOfficialPluginRegistry(), []);
+  useEffect(() => {
+    void listInstalledPlugins()
+      .then((states) => {
+        setInstalledPluginStates(Object.fromEntries(states.map((state) => [state.id, state])));
+      })
+      .catch(() => setInstalledPluginStates({}));
+  }, []);
   useEffect(() => {
     if (!pluginsEnabled) {
       setPluginsActivated(false);
       return;
     }
-    const dispose = pluginRegistry.activate({
-      getSnapshot,
-      subscribe: () => () => undefined,
-    });
+    const dispose = pluginRegistry.activate(
+      {
+        getSnapshot,
+        subscribe: () => () => undefined,
+      },
+      Object.fromEntries(
+        pluginRegistry.listPlugins().map((plugin) => {
+          const state = installedPluginStates[plugin.id];
+          return [
+            plugin.id,
+            state?.enabled === false
+              ? []
+              : (state?.approvedPermissions ? pluginPermissions(state.approvedPermissions) : plugin.permissions ?? []),
+          ];
+        }),
+      ),
+    );
     setPluginsActivated(true);
     return () => {
       dispose();
       setPluginsActivated(false);
     };
-  }, [getSnapshot, pluginRegistry, pluginsEnabled]);
+  }, [getSnapshot, installedPluginStates, pluginRegistry, pluginsEnabled]);
 
   const pluginPanels = useMemo(
     () =>
