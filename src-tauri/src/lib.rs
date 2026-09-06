@@ -368,6 +368,13 @@ struct DiscoverPluginsResponse {
     diagnostics: Vec<PluginDiscoveryDiagnostic>,
 }
 
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct LoadPluginBundleResponse {
+    plugin: PluginManifestInfo,
+    code: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct ValidatedManifest {
     schema_version: u64,
@@ -1148,6 +1155,97 @@ fn uninstall_plugin_core(
         directory: target.display().to_string(),
         removed,
         state_removed,
+    })
+}
+
+/// Loads the validated code bundle for an installed, enabled plugin.
+///
+/// Refuses to load when the requested id is invalid, the plugin is not
+/// installed or is disabled, the persisted state directory is not a direct
+/// child of the configured plugin directory named after the plugin, the
+/// on-disk manifest no longer matches the requested id, or the manifest entry
+/// is not a .js/.mjs regular file that stays inside the plugin directory.
+fn load_plugin_bundle_core(
+    plugin_id: &str,
+    plugin_directory: &Path,
+    connection: &Connection,
+) -> Result<LoadPluginBundleResponse, String> {
+    if !is_valid_plugin_id(plugin_id) {
+        return Err(format!("Invalid plugin id '{plugin_id}'."));
+    }
+
+    let state = load_installed_plugin(connection, plugin_id)?
+        .ok_or_else(|| format!("Plugin '{plugin_id}' is not installed."))?;
+    if !state.enabled {
+        return Err(format!(
+            "Plugin '{plugin_id}' is disabled and cannot be loaded."
+        ));
+    }
+
+    let directory = PathBuf::from(&state.directory);
+    ensure_plugin_target_within(plugin_directory, &directory, plugin_id)?;
+
+    let manifest_path = directory.join(PLUGIN_MANIFEST_FILE);
+    let plugin = load_and_validate_manifest(&manifest_path, &directory)
+        .map_err(|issue| format!("{}: {}", issue.code, issue.message))?;
+    if plugin.id != plugin_id {
+        return Err(format!(
+            "Plugin manifest id '{}' does not match requested plugin id '{plugin_id}'.",
+            plugin.id
+        ));
+    }
+
+    let extension = Path::new(&plugin.entry)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_lowercase);
+    if !matches!(extension.as_deref(), Some("js") | Some("mjs")) {
+        return Err(format!(
+            "Plugin entry '{}' must have a .js or .mjs extension.",
+            plugin.entry
+        ));
+    }
+
+    let entry_path = PathBuf::from(&plugin.entry_path);
+
+    let canonical_directory = fs::canonicalize(&directory).map_err(|error| {
+        format!(
+            "Unable to resolve plugin directory '{}': {error}",
+            directory.display()
+        )
+    })?;
+    let canonical_entry = fs::canonicalize(&entry_path).map_err(|error| {
+        format!(
+            "Unable to resolve plugin entry '{}': {error}",
+            plugin.entry
+        )
+    })?;
+    if !canonical_entry.starts_with(&canonical_directory) {
+        return Err(format!(
+            "Plugin entry '{}' is not inside its plugin directory.",
+            plugin.entry
+        ));
+    }
+    if !canonical_entry.is_file() {
+        return Err(format!(
+            "Plugin entry '{}' is not a regular file.",
+            plugin.entry
+        ));
+    }
+
+    let code = fs::read_to_string(&entry_path).map_err(|error| {
+        format!(
+            "Unable to read plugin entry '{}' as UTF-8 text: {error}",
+            plugin.entry
+        )
+    })?;
+
+    Ok(LoadPluginBundleResponse {
+        plugin: PluginManifestInfo {
+            state: Some(state),
+            ..plugin
+        },
+        code,
     })
 }
 
@@ -1966,6 +2064,13 @@ fn set_plugin_state(
 fn list_installed_plugins(app: AppHandle) -> Result<Vec<PluginInstallState>, String> {
     let connection = open_connection(&app)?;
     load_all_installed_plugins(&connection)
+}
+
+#[tauri::command]
+fn load_plugin_bundle(app: AppHandle, plugin_id: String) -> Result<LoadPluginBundleResponse, String> {
+    let plugin_directory = resolve_plugin_directory(&app)?;
+    let connection = open_connection(&app)?;
+    load_plugin_bundle_core(&plugin_id, &plugin_directory, &connection)
 }
 
 fn smoke_report_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -3022,6 +3127,87 @@ mod tests {
 
         let _ = fs::remove_dir_all(&root);
     }
+
+    fn enable_installed_plugin(connection: &Connection, plugin_id: &str) -> PluginInstallState {
+        let mut state = load_installed_plugin(connection, plugin_id)
+            .expect("load state")
+            .expect("state exists");
+        state.enabled = true;
+        upsert_installed_plugin(connection, &state).expect("enable plugin");
+        state
+    }
+
+    #[test]
+    fn load_plugin_bundle_refuses_disabled_plugin() {
+        let root = unique_temp_dir("load-disabled");
+        let plugin_dir = root.join("plugins");
+        let source = write_plugin_source(&root, "source", "disabled-plugin", "1.0.0", "index.js");
+
+        let connection = open_test_connection();
+        install_plugin_core(&source, &plugin_dir, &connection).expect("install plugin");
+        assert!(
+            !load_installed_plugin(&connection, "disabled-plugin")
+                .expect("load state")
+                .expect("state exists")
+                .enabled
+        );
+
+        let error =
+            load_plugin_bundle_core("disabled-plugin", &plugin_dir, &connection).expect_err("refuse disabled");
+        assert!(error.contains("disabled"), "unexpected error: {error}");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_plugin_bundle_returns_code_and_state_for_enabled_plugin() {
+        let root = unique_temp_dir("load-bundle");
+        let plugin_dir = root.join("plugins");
+        let source = write_plugin_source(&root, "source", "bundle-plugin", "1.0.0", "index.js");
+        fs::write(source.join("index.js"), "console.log('bundle');").expect("write entry source");
+
+        let connection = open_test_connection();
+        install_plugin_core(&source, &plugin_dir, &connection).expect("install plugin");
+        let state = enable_installed_plugin(&connection, "bundle-plugin");
+
+        let response =
+            load_plugin_bundle_core("bundle-plugin", &plugin_dir, &connection).expect("load bundle");
+        assert_eq!(response.code, "console.log('bundle');");
+        assert_eq!(response.plugin.id, "bundle-plugin");
+        assert_eq!(response.plugin.state, Some(state));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_plugin_bundle_rejects_invalid_plugin_id() {
+        let root = unique_temp_dir("load-bad-id");
+        let plugin_dir = root.join("plugins");
+        let connection = open_test_connection();
+
+        let error =
+            load_plugin_bundle_core("../escape", &plugin_dir, &connection).expect_err("reject id");
+        assert!(error.contains("Invalid plugin id"), "unexpected error: {error}");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_plugin_bundle_refuses_non_js_entry() {
+        let root = unique_temp_dir("load-non-js");
+        let plugin_dir = root.join("plugins");
+        let source = write_plugin_source(&root, "source", "ts-plugin", "1.0.0", "index.ts");
+
+        let connection = open_test_connection();
+        install_plugin_core(&source, &plugin_dir, &connection).expect("install plugin");
+        enable_installed_plugin(&connection, "ts-plugin");
+
+        let error =
+            load_plugin_bundle_core("ts-plugin", &plugin_dir, &connection).expect_err("refuse entry");
+        assert!(error.contains(".js or .mjs"), "unexpected error: {error}");
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -3105,7 +3291,8 @@ pub fn run() {
             install_plugin,
             uninstall_plugin,
             set_plugin_state,
-            list_installed_plugins
+            list_installed_plugins,
+            load_plugin_bundle
         ])
         .run(context)
         .expect("error while running Whybrary");

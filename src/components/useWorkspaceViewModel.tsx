@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createOfficialPluginRegistry } from '../plugins';
-import { listInstalledPlugins } from '../plugins/platform';
+import { ExternalPluginLoader } from '../plugins/externalLoader';
+import {
+  discoverPlugins,
+  listInstalledPlugins,
+  PLUGIN_STATE_CHANGED_EVENT,
+} from '../plugins/platform';
 import type { PluginPermission } from '../plugins/types';
 import type { AppDialogState } from './AppDialog';
 import { getCopy } from '../lib/i18n';
@@ -11,7 +16,8 @@ import { useSnapshotTransferController } from './useSnapshotTransferController';
 
 const ADVANCED_FEATURES_KEY = 'whybrary.ui.advancedFeatures';
 const PLUGINS_ENABLED_KEY = 'whybrary.plugins.enabled';
-const pluginPermissions = (permissions: string[]): PluginPermission[] => permissions as PluginPermission[];
+const pluginPermissions = (permissions: string[]): PluginPermission[] =>
+  permissions as PluginPermission[];
 
 type Commands = {
   preferences: {
@@ -125,14 +131,30 @@ export function useWorkspaceViewModel({
   const [installedPluginStates, setInstalledPluginStates] = useState<
     Record<string, { enabled: boolean; approvedPermissions: string[] }>
   >({});
+  const [discoveredPlugins, setDiscoveredPlugins] = useState<
+    Awaited<ReturnType<typeof discoverPlugins>>['plugins']
+  >([]);
   const pluginRegistry = useMemo(() => createOfficialPluginRegistry(), []);
-  useEffect(() => {
-    void listInstalledPlugins()
-      .then((states) => {
+  const externalPluginLoader = useMemo(
+    () => new ExternalPluginLoader(pluginRegistry),
+    [pluginRegistry],
+  );
+  const refreshPluginRuntime = useCallback(() => {
+    void Promise.all([listInstalledPlugins(), discoverPlugins()])
+      .then(([states, discovery]) => {
         setInstalledPluginStates(Object.fromEntries(states.map((state) => [state.id, state])));
+        setDiscoveredPlugins(discovery.plugins);
       })
-      .catch(() => setInstalledPluginStates({}));
+      .catch(() => {
+        setInstalledPluginStates({});
+        setDiscoveredPlugins([]);
+      });
   }, []);
+  useEffect(() => {
+    refreshPluginRuntime();
+    window.addEventListener(PLUGIN_STATE_CHANGED_EVENT, refreshPluginRuntime);
+    return () => window.removeEventListener(PLUGIN_STATE_CHANGED_EVENT, refreshPluginRuntime);
+  }, [refreshPluginRuntime]);
   useEffect(() => {
     if (!pluginsEnabled) {
       setPluginsActivated(false);
@@ -150,17 +172,32 @@ export function useWorkspaceViewModel({
             plugin.id,
             state?.enabled === false
               ? []
-              : (state?.approvedPermissions ? pluginPermissions(state.approvedPermissions) : plugin.permissions ?? []),
+              : state?.approvedPermissions
+                ? pluginPermissions(state.approvedPermissions)
+                : (plugin.permissions ?? []),
           ];
         }),
       ),
     );
+    void externalPluginLoader.sync(
+      discoveredPlugins,
+      { getSnapshot, subscribe: () => () => undefined },
+      true,
+    );
     setPluginsActivated(true);
     return () => {
+      externalPluginLoader.disposeAll();
       dispose();
       setPluginsActivated(false);
     };
-  }, [getSnapshot, installedPluginStates, pluginRegistry, pluginsEnabled]);
+  }, [
+    discoveredPlugins,
+    externalPluginLoader,
+    getSnapshot,
+    installedPluginStates,
+    pluginRegistry,
+    pluginsEnabled,
+  ]);
 
   const pluginPanels = useMemo(
     () =>

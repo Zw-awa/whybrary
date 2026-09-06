@@ -96,8 +96,11 @@ export class PluginRegistry {
   activate(
     context: Omit<PluginContext, 'registerPanel' | 'registerCommand'>,
     approvedPermissions: Record<string, WhybraryPlugin['permissions']> = {},
+    enabledPluginIds?: Iterable<string>,
   ): () => void {
-    for (const id of this.records.keys()) this.enable(id, context, approvedPermissions[id] ?? []);
+    const ids = enabledPluginIds ? new Set(enabledPluginIds) : undefined;
+    for (const id of this.records.keys())
+      if (!ids || ids.has(id)) this.enable(id, context, approvedPermissions[id] ?? []);
     return () => this.disposeAll();
   }
 

@@ -31,6 +31,11 @@ type RawPlugin = PluginManifest & {
 };
 type RawInstalledPlugin = Omit<InstalledPlugin, 'id'> & { pluginId: string };
 const DIRECTORY_KEY = 'whybrary.plugins.directory';
+export const PLUGIN_STATE_CHANGED_EVENT = 'whybrary:plugin-state-changed';
+
+function notifyPluginStateChanged(): void {
+  window.dispatchEvent(new Event(PLUGIN_STATE_CHANGED_EVENT));
+}
 function inTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
@@ -83,10 +88,13 @@ export async function discoverPlugins(): Promise<PluginDiscoveryResponse> {
 }
 export async function installPlugin(sourcePath: string): Promise<InstalledPlugin> {
   const result = await invoke<{ state: RawInstalledPlugin }>('install_plugin', { sourcePath });
-  return normalizeState(result.state);
+  const state = normalizeState(result.state);
+  notifyPluginStateChanged();
+  return state;
 }
 export async function uninstallPlugin(pluginId: string): Promise<void> {
   await invoke('uninstall_plugin', { pluginId });
+  notifyPluginStateChanged();
 }
 export async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
   if (!inTauri()) return [];
@@ -97,12 +105,26 @@ export async function setPluginState(
   enabled: boolean,
   approvedPermissions: PluginPermission[],
 ): Promise<InstalledPlugin> {
-  const state = await invoke<RawInstalledPlugin>('set_plugin_state', {
+  const state = normalizeState(
+    await invoke<RawInstalledPlugin>('set_plugin_state', {
+      pluginId,
+      enabled,
+      approvedPermissions,
+    }),
+  );
+  notifyPluginStateChanged();
+  return state;
+}
+export type PluginBundle = {
+  plugin: DiscoveredPlugin;
+  code: string;
+};
+
+export async function loadPluginBundle(pluginId: string): Promise<PluginBundle> {
+  const response = await invoke<{ plugin: RawPlugin; code: string }>('load_plugin_bundle', {
     pluginId,
-    enabled,
-    approvedPermissions,
   });
-  return normalizeState(state);
+  return { plugin: normalizePlugin(response.plugin), code: response.code };
 }
 export function fromManifest(
   manifest: PluginManifest,
