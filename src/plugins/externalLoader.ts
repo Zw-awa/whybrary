@@ -1,4 +1,10 @@
-import type { PluginContext, PluginPermission, WhybraryPlugin } from './types';
+import type {
+  PluginContext,
+  PluginPermission,
+  PluginRuntimeInfo,
+  PluginRuntimeStatus,
+  WhybraryPlugin,
+} from './types';
 import { PluginRegistry } from './registry';
 import { loadPluginBundle, type DiscoveredPlugin } from './platform';
 
@@ -40,8 +46,14 @@ async function importBundle(code: string, pluginId: string): Promise<WhybraryPlu
   }
 }
 
+export type ExternalPluginRuntime = PluginRuntimeInfo & { status: PluginRuntimeStatus };
+export type ExternalPluginStatusListener = (statuses: ExternalPluginRuntime[]) => void;
+export const PLUGIN_RUNTIME_STATUS_EVENT = 'whybrary:plugin-runtime-status';
+
 export class ExternalPluginLoader {
   private readonly removers = new Map<string, () => void>();
+  private syncGeneration = 0;
+  private statuses: ExternalPluginRuntime[] = [];
 
   constructor(
     private readonly registry: PluginRegistry,
@@ -51,12 +63,27 @@ export class ExternalPluginLoader {
     ) => Promise<WhybraryPlugin> = importBundle,
   ) {}
 
+  getRuntime(): ExternalPluginRuntime[] {
+    return this.statuses;
+  }
+
   async sync(
     plugins: DiscoveredPlugin[],
     context: Omit<PluginContext, 'registerPanel' | 'registerCommand'>,
     enabled: boolean,
+    onStatus?: ExternalPluginStatusListener,
   ): Promise<void> {
     this.disposeAll();
+    const generation = this.syncGeneration;
+    this.statuses = plugins.map((plugin) => ({
+      id: plugin.manifest.id,
+      name: plugin.manifest.name,
+      version: plugin.manifest.version,
+      source: 'local',
+      permissions: plugin.manifest.permissions,
+      status: !enabled || !plugin.state?.enabled ? 'disabled' : 'activating',
+    }));
+    onStatus?.(this.statuses);
     if (!enabled) return;
     for (const discovered of plugins) {
       const state = discovered.state;
@@ -64,6 +91,7 @@ export class ExternalPluginLoader {
       try {
         const bundle = await loadPluginBundle(discovered.manifest.id);
         const plugin = await this.bundleImporter(bundle.code, bundle.plugin.manifest.id);
+        if (generation !== this.syncGeneration) return;
         if (!matchesManifest(plugin, bundle.plugin)) {
           throw new Error(
             `Plugin ${bundle.plugin.manifest.id} export does not match its manifest.`,
@@ -72,14 +100,32 @@ export class ExternalPluginLoader {
         const remove = this.registry.add(plugin, 'local');
         this.removers.set(plugin.id, remove);
         this.registry.enable(plugin.id, context, state.approvedPermissions as PluginPermission[]);
+        this.updateStatus(plugin.id, { status: 'active' }, onStatus);
       } catch (error) {
-        console.error(`Unable to load plugin ${discovered.manifest.id}:`, error);
+        if (generation !== this.syncGeneration) return;
+        this.updateStatus(
+          discovered.manifest.id,
+          { status: 'failed', error: error instanceof Error ? error.message : String(error) },
+          onStatus,
+        );
       }
     }
   }
 
   disposeAll(): void {
+    this.syncGeneration += 1;
     for (const remove of this.removers.values()) remove();
     this.removers.clear();
+  }
+
+  private updateStatus(
+    id: string,
+    update: Partial<ExternalPluginRuntime>,
+    onStatus?: ExternalPluginStatusListener,
+  ): void {
+    this.statuses = this.statuses.map((status) =>
+      status.id === id ? { ...status, ...update } : status,
+    );
+    onStatus?.(this.statuses);
   }
 }

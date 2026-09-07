@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { PLUGIN_RUNTIME_STATUS_EVENT, type ExternalPluginRuntime } from '../plugins/externalLoader';
 import {
   discoverPlugins,
   getPluginDirectory,
@@ -19,6 +20,7 @@ export function PluginManager({ enabled, locale }: PluginManagerProps) {
   const [sourcePath, setSourcePath] = useState('');
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<ExternalPluginRuntime[]>([]);
   const refresh = async () => {
     try {
       const [nextDirectory, response] = await Promise.all([
@@ -35,6 +37,14 @@ export function PluginManager({ enabled, locale }: PluginManagerProps) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
+  useEffect(() => {
+    const onRuntimeStatus = (event: Event) => {
+      const detail = (event as CustomEvent<ExternalPluginRuntime[]>).detail;
+      if (Array.isArray(detail)) setRuntime(detail);
+    };
+    window.addEventListener(PLUGIN_RUNTIME_STATUS_EVENT, onRuntimeStatus);
+    return () => window.removeEventListener(PLUGIN_RUNTIME_STATUS_EVENT, onRuntimeStatus);
+  }, []);
   useEffect(() => {
     void refresh();
   }, []);
@@ -147,6 +157,7 @@ export function PluginManager({ enabled, locale }: PluginManagerProps) {
           plugins.map((plugin) => {
             const state = stateFor(plugin);
             const granted = new Set(state?.approvedPermissions ?? []);
+            const runtimeInfo = runtime.find((item) => item.id === plugin.manifest.id);
             return (
               <li key={plugin.directory}>
                 <strong>{plugin.manifest.name}</strong>
@@ -155,6 +166,12 @@ export function PluginManager({ enabled, locale }: PluginManagerProps) {
                   {state ? ` · ${words.installed}` : ''}
                 </span>
                 <small>{plugin.manifest.permissions.join(', ') || 'No permissions'}</small>
+                {runtimeInfo ? (
+                  <small className="plugin-manager__runtime">
+                    {runtimeInfo.status}
+                    {runtimeInfo.error ? `: ${runtimeInfo.error}` : ''}
+                  </small>
+                ) : null}
                 {state ? (
                   <>
                     <label className="plugin-manager__toggle">

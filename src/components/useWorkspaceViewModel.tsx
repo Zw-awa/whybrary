@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createOfficialPluginRegistry } from '../plugins';
-import { ExternalPluginLoader } from '../plugins/externalLoader';
+import { ExternalPluginLoader, PLUGIN_RUNTIME_STATUS_EVENT } from '../plugins/externalLoader';
 import {
   discoverPlugins,
   listInstalledPlugins,
@@ -183,6 +183,8 @@ export function useWorkspaceViewModel({
       discoveredPlugins,
       { getSnapshot, subscribe: () => () => undefined },
       true,
+      (statuses) =>
+        window.dispatchEvent(new CustomEvent(PLUGIN_RUNTIME_STATUS_EVENT, { detail: statuses })),
     );
     setPluginsActivated(true);
     return () => {

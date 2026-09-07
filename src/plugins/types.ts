@@ -25,9 +25,14 @@ export type PluginCommand = {
   run: (context: PluginContext) => void;
 };
 
+export type PluginSettings = {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+};
 export type PluginContext = {
   getSnapshot: () => AppSnapshot;
   subscribe: (listener: () => void) => () => void;
+  settings?: PluginSettings;
   registerPanel: (panel: PluginPanel) => () => void;
   registerCommand: (command: PluginCommand) => () => void;
 };

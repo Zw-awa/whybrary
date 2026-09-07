@@ -4,6 +4,7 @@ import type {
   PluginPanel,
   PluginRuntimeInfo,
   PluginRuntimeStatus,
+  PluginSettings,
   WhybraryPlugin,
 } from './types';
 
@@ -19,6 +20,7 @@ export class PluginRegistry {
   private readonly records = new Map<string, PluginRecord>();
   private readonly panels = new Map<string, { owner: string; panel: PluginPanel }>();
   private readonly commands = new Map<string, { owner: string; command: PluginCommand }>();
+  private readonly settings = new Map<string, Map<string, unknown>>();
 
   add(plugin: WhybraryPlugin, source: 'built-in' | 'local' = 'built-in'): () => void {
     if (this.records.has(plugin.id)) throw new Error(`Duplicate plugin: ${plugin.id}`);
@@ -59,6 +61,21 @@ export class PluginRegistry {
       record.disposers.push(dispose);
       return dispose;
     };
+    const settingsStore = this.settings.get(id) ?? new Map<string, unknown>();
+    this.settings.set(id, settingsStore);
+    const settings: PluginSettings = {
+      get: (key) => {
+        if (!can('settings:read'))
+          throw new Error(`Plugin ${id} is not approved for settings:read.`);
+        return settingsStore.get(key);
+      },
+      set: (key, value) => {
+        if (!can('settings:write'))
+          throw new Error(`Plugin ${id} is not approved for settings:write.`);
+        if (!/^[a-zA-Z0-9._-]{1,80}$/.test(key)) throw new Error('Plugin setting key is invalid.');
+        settingsStore.set(key, value);
+      },
+    };
     try {
       const pluginContext: PluginContext = {
         ...context,
@@ -69,6 +86,7 @@ export class PluginRegistry {
             },
         registerPanel,
         registerCommand,
+        settings,
       };
       const dispose = record.plugin.activate(pluginContext);
       if (dispose) record.disposers.push(dispose);

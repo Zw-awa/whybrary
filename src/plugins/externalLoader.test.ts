@@ -65,11 +65,7 @@ describe('ExternalPluginLoader', () => {
   });
 
   it('rejects a bundle whose export does not match its manifest', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    loadPluginBundle.mockResolvedValue({
-      plugin,
-      code: `export default { id: 'other.plugin', name: 'Other', version: '1.0.0', permissions: ['ui:panel'], activate() {} };`,
-    });
+    loadPluginBundle.mockResolvedValue({ plugin, code: 'ignored' });
     const registry = new PluginRegistry();
     const loader = new ExternalPluginLoader(registry, async () => ({
       id: 'other.plugin',
@@ -78,10 +74,13 @@ describe('ExternalPluginLoader', () => {
       permissions: ['ui:panel'],
       activate: () => undefined,
     }));
+    const statuses: string[] = [];
 
-    await loader.sync([plugin], context, true);
+    await loader.sync([plugin], context, true, (next) => {
+      statuses.push(next.find((item) => item.id === plugin.manifest.id)?.status ?? 'missing');
+    });
 
     expect(registry.listRuntime()).toEqual([]);
-    expect(error).toHaveBeenCalled();
+    expect(statuses).toContain('failed');
   });
 });

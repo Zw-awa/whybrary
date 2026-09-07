@@ -125,6 +125,35 @@ describe('PluginRegistry', () => {
     registry.activate(context, { restricted: [] });
     expect(registry.listRuntime()[0]).toMatchObject({ id: 'restricted', status: 'active' });
   });
+  it('isolates plugin settings and enforces settings permissions', () => {
+    const registry = new PluginRegistry();
+    registry.add({
+      id: 'settings-plugin',
+      name: 'Settings',
+      version: '1',
+      permissions: ['settings:read', 'settings:write'],
+      activate: (ctx) => {
+        ctx.settings?.set('view.mode', 'compact');
+        expect(ctx.settings?.get('view.mode')).toBe('compact');
+      },
+    });
+    registry.add({
+      id: 'no-settings',
+      name: 'No settings',
+      version: '1',
+      permissions: ['settings:read'],
+      activate: (ctx) => expect(() => ctx.settings?.set('x', true)).toThrow('settings:write'),
+    });
+
+    registry.activate(context, {
+      'settings-plugin': ['settings:read', 'settings:write'],
+      'no-settings': ['settings:read'],
+    });
+    expect(registry.listRuntime()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'no-settings', status: 'active' })]),
+    );
+  });
+
   it('rejects duplicate plugin ids', () => {
     const registry = new PluginRegistry();
     const plugin = { id: 'same', name: 'Same', version: '1', activate: () => undefined };
