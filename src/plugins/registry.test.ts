@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PluginRegistry } from './registry';
+import { createInMemoryPluginSettingsStore } from './settingsStore';
 
 const context = { getSnapshot: vi.fn(), subscribe: () => () => undefined };
 
@@ -152,6 +153,49 @@ describe('PluginRegistry', () => {
     expect(registry.listRuntime()).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'no-settings', status: 'active' })]),
     );
+  });
+
+  it('preloads persisted settings and writes through the injected store', async () => {
+    const store = createInMemoryPluginSettingsStore();
+    await store.set('persist-plugin', 'theme', 'dark');
+    const registry = new PluginRegistry(store);
+    registry.add({
+      id: 'persist-plugin',
+      name: 'Persist',
+      version: '1',
+      permissions: ['settings:read', 'settings:write'],
+      activate: (ctx) => {
+        expect(ctx.settings?.get('theme')).toBe('dark');
+        void ctx.settings?.set('count', 3);
+      },
+    });
+
+    await registry.preloadSettings('persist-plugin');
+    registry.enable('persist-plugin', context, ['settings:read', 'settings:write']);
+    expect(registry.listRuntime()[0]).toMatchObject({ id: 'persist-plugin', status: 'active' });
+
+    await vi.waitFor(async () => {
+      expect(await store.load('persist-plugin')).toMatchObject({ theme: 'dark', count: 3 });
+    });
+  });
+
+  it('drops the read cache when a plugin is removed', async () => {
+    const store = createInMemoryPluginSettingsStore();
+    await store.set('tmp-plugin', 'kept', true);
+    const registry = new PluginRegistry(store);
+    const remove = registry.add({
+      id: 'tmp-plugin',
+      name: 'Tmp',
+      version: '1',
+      permissions: ['settings:read'],
+      activate: () => undefined,
+    });
+
+    await registry.preloadSettings('tmp-plugin');
+    remove();
+    const cache = (registry as unknown as { settingsCache: Map<string, unknown> }).settingsCache;
+    expect(cache.has('tmp-plugin')).toBe(false);
+    expect(await store.load('tmp-plugin')).toEqual({ kept: true });
   });
 
   it('rejects duplicate plugin ids', () => {

@@ -128,6 +128,7 @@ export function useWorkspaceViewModel({
     () => window.localStorage.getItem(PLUGINS_ENABLED_KEY) === 'true',
   );
   const [pluginsActivated, setPluginsActivated] = useState(false);
+  const [pluginRegistryRevision, setPluginRegistryRevision] = useState(0);
   const [installedPluginStates, setInstalledPluginStates] = useState<
     Record<string, { enabled: boolean; approvedPermissions: string[] }>
   >({});
@@ -183,8 +184,10 @@ export function useWorkspaceViewModel({
       discoveredPlugins,
       { getSnapshot, subscribe: () => () => undefined },
       true,
-      (statuses) =>
-        window.dispatchEvent(new CustomEvent(PLUGIN_RUNTIME_STATUS_EVENT, { detail: statuses })),
+      (statuses) => {
+        setPluginRegistryRevision((revision) => revision + 1);
+        window.dispatchEvent(new CustomEvent(PLUGIN_RUNTIME_STATUS_EVENT, { detail: statuses }));
+      },
     );
     setPluginsActivated(true);
     return () => {
@@ -201,16 +204,15 @@ export function useWorkspaceViewModel({
     pluginsEnabled,
   ]);
 
-  const pluginPanels = useMemo(
-    () =>
-      !pluginsActivated
-        ? []
-        : pluginRegistry.listPanels().map((panel) => ({
-            panel,
-            items: panel.getItems(snapshot, snapshot.locale),
-          })),
-    [pluginsActivated, pluginRegistry, snapshot],
-  );
+  const pluginPanels = useMemo(() => {
+    void pluginRegistryRevision;
+    return !pluginsActivated
+      ? []
+      : pluginRegistry.listPanels().map((panel) => ({
+          panel,
+          items: panel.getItems(snapshot, snapshot.locale),
+        }));
+  }, [pluginRegistryRevision, pluginsActivated, pluginRegistry, snapshot]);
 
   const copy = getCopy(snapshot.locale);
   const closeDialog = useCallback(() => setDialogState(null), []);

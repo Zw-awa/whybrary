@@ -64,6 +64,31 @@ describe('ExternalPluginLoader', () => {
     expect(registry.listPanels()).toEqual([]);
   });
 
+  it('reports activation failures instead of claiming the plugin is active', async () => {
+    loadPluginBundle.mockResolvedValue({ plugin, code: 'ignored' });
+    const registry = new PluginRegistry();
+    const loader = new ExternalPluginLoader(registry, async () => ({
+      id: 'example.plugin',
+      name: 'Example',
+      version: '1.0.0',
+      permissions: ['ui:panel'],
+      activate: () => {
+        throw new Error('activation exploded');
+      },
+    }));
+    const statuses: string[] = [];
+
+    await loader.sync([plugin], context, true, (next) => {
+      statuses.push(next.find((item) => item.id === plugin.manifest.id)?.status ?? 'missing');
+    });
+
+    expect(statuses).toContain('failed');
+    expect(statuses).not.toContain('active');
+    expect(loader.getRuntime()[0]).toMatchObject({
+      status: 'failed',
+      error: 'activation exploded',
+    });
+  });
   it('rejects a bundle whose export does not match its manifest', async () => {
     loadPluginBundle.mockResolvedValue({ plugin, code: 'ignored' });
     const registry = new PluginRegistry();

@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager};
 #[cfg(desktop)]
 use tauri::{LogicalSize, Size};
 
-const LATEST_SCHEMA_VERSION: i32 = 4;
+const LATEST_SCHEMA_VERSION: i32 = 5;
 const SMOKE_MODE_ENV: &str = "WHYBRARY_TAURI_SMOKE";
 const APP_DATA_DIR_OVERRIDE_ENV: &str = "WHYBRARY_APP_DATA_DIR";
 
@@ -112,6 +112,22 @@ CREATE TABLE IF NOT EXISTS plugin_install_state (
 CREATE INDEX IF NOT EXISTS idx_plugin_install_state_directory
 ON plugin_install_state(directory);
 "#;
+
+const MIGRATION_5_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS plugin_settings (
+  plugin_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (plugin_id, key)
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS idx_plugin_settings_plugin_id
+ON plugin_settings(plugin_id);
+"#;
+
+const MAX_PLUGIN_SETTING_KEY_LENGTH: usize = 80;
+const MAX_PLUGIN_SETTING_VALUE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -1148,6 +1164,7 @@ fn uninstall_plugin_core(
     let state_removed = state.is_some();
     if state_removed {
         delete_installed_plugin(connection, plugin_id)?;
+        delete_plugin_settings_core(connection, plugin_id)?;
     }
 
     Ok(UninstallPluginResponse {
@@ -1249,6 +1266,94 @@ fn load_plugin_bundle_core(
     })
 }
 
+fn is_valid_plugin_setting_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= MAX_PLUGIN_SETTING_KEY_LENGTH
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+fn load_plugin_settings(
+    connection: &Connection,
+    plugin_id: &str,
+) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT key, value_json
+             FROM plugin_settings
+             WHERE plugin_id = ?1",
+        )
+        .map_err(|error| {
+            format!("Unable to prepare plugin settings load for '{plugin_id}': {error}")
+        })?;
+    let rows = statement
+        .query_map([plugin_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| {
+            format!("Unable to query plugin settings for '{plugin_id}': {error}")
+        })?;
+
+    let mut settings = std::collections::HashMap::new();
+    for row in rows {
+        let (key, value_json) = row.map_err(|error| {
+            format!("Unable to read plugin setting row for '{plugin_id}': {error}")
+        })?;
+        let value: serde_json::Value = serde_json::from_str(&value_json).map_err(|error| {
+            format!(
+                "Unable to parse stored plugin setting '{key}' for '{plugin_id}': {error}"
+            )
+        })?;
+        settings.insert(key, value);
+    }
+    Ok(settings)
+}
+
+fn save_plugin_setting(
+    connection: &Connection,
+    plugin_id: &str,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    if !is_valid_plugin_setting_key(key) {
+        return Err("Plugin setting key is invalid.".to_string());
+    }
+    let value_json = serde_json::to_string(value)
+        .map_err(|error| format!("Unable to serialize plugin setting '{key}': {error}"))?;
+    if value_json.len() > MAX_PLUGIN_SETTING_VALUE_BYTES {
+        return Err(format!(
+            "Plugin setting '{key}' exceeds the {MAX_PLUGIN_SETTING_VALUE_BYTES}-byte limit."
+        ));
+    }
+
+    connection
+        .execute(
+            "INSERT INTO plugin_settings (plugin_id, key, value_json, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(plugin_id, key) DO UPDATE SET
+               value_json = excluded.value_json,
+               updated_at = excluded.updated_at",
+            params![plugin_id, key, value_json, iso_timestamp_now()],
+        )
+        .map_err(|error| {
+            format!("Unable to save plugin setting '{key}' for '{plugin_id}': {error}")
+        })?;
+    Ok(())
+}
+
+fn delete_plugin_settings_core(connection: &Connection, plugin_id: &str) -> Result<(), String> {
+    connection
+        .execute(
+            "DELETE FROM plugin_settings WHERE plugin_id = ?1",
+            [plugin_id],
+        )
+        .map_err(|error| {
+            format!("Unable to delete plugin settings for '{plugin_id}': {error}")
+        })?;
+    Ok(())
+}
+
 fn configure_connection(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch("PRAGMA foreign_keys = ON;")
@@ -1295,6 +1400,13 @@ fn migrate_to_v4(connection: &Connection) -> Result<(), String> {
     set_schema_version(connection, 4)
 }
 
+fn migrate_to_v5(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(MIGRATION_5_SQL)
+        .map_err(|error| format!("Unable to apply SQLite migration 4 -> 5: {error}"))?;
+    set_schema_version(connection, 5)
+}
+
 fn run_migrations(connection: &Connection) -> Result<(), String> {
     let mut version = load_schema_version(connection)?;
     if version > LATEST_SCHEMA_VERSION {
@@ -1309,6 +1421,7 @@ fn run_migrations(connection: &Connection) -> Result<(), String> {
             1 => migrate_to_v2(connection)?,
             2 => migrate_to_v3(connection)?,
             3 => migrate_to_v4(connection)?,
+            4 => migrate_to_v5(connection)?,
             _ => {
                 return Err(format!(
                     "No SQLite migration path from version {version} to {LATEST_SCHEMA_VERSION}."
@@ -1565,8 +1678,12 @@ fn replace_snapshot_to_connection(
         .execute("DELETE FROM spaces", [])
         .map_err(|error| format!("Unable to clear spaces: {error}"))?;
     transaction
-        .execute("DELETE FROM settings", [])
-        .map_err(|error| format!("Unable to clear settings: {error}"))?;
+        .execute(
+            "DELETE FROM settings
+             WHERE key NOT IN ('pluginDirectory')",
+            [],
+        )
+        .map_err(|error| format!("Unable to clear workspace settings: {error}"))?;
 
     transaction
         .execute(
@@ -2073,6 +2190,41 @@ fn load_plugin_bundle(app: AppHandle, plugin_id: String) -> Result<LoadPluginBun
     load_plugin_bundle_core(&plugin_id, &plugin_directory, &connection)
 }
 
+#[tauri::command]
+fn list_plugin_settings(
+    app: AppHandle,
+    plugin_id: String,
+) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
+    if !is_valid_plugin_id(&plugin_id) {
+        return Err("Plugin id is invalid.".to_string());
+    }
+    let connection = open_connection(&app)?;
+    load_plugin_settings(&connection, &plugin_id)
+}
+
+#[tauri::command]
+fn set_plugin_setting(
+    app: AppHandle,
+    plugin_id: String,
+    key: String,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    if !is_valid_plugin_id(&plugin_id) {
+        return Err("Plugin id is invalid.".to_string());
+    }
+    let connection = open_connection(&app)?;
+    save_plugin_setting(&connection, &plugin_id, &key, &value)
+}
+
+#[tauri::command]
+fn delete_plugin_settings(app: AppHandle, plugin_id: String) -> Result<(), String> {
+    if !is_valid_plugin_id(&plugin_id) {
+        return Err("Plugin id is invalid.".to_string());
+    }
+    let connection = open_connection(&app)?;
+    delete_plugin_settings_core(&connection, &plugin_id)
+}
+
 fn smoke_report_path(app: &AppHandle) -> Result<PathBuf, String> {
     let mut report_path = app_data_dir(app)?;
     report_path.push("smoke-report.json");
@@ -2331,6 +2483,23 @@ mod tests {
         assert_eq!(loaded.spaces[0].edges.len(), 0);
         assert_eq!(loaded.spaces[0].todos.len(), 1);
         assert_eq!(loaded.active_space_id, None);
+    }
+
+    #[test]
+    fn replacing_snapshot_preserves_plugin_directory_setting() {
+        let mut connection = open_test_connection();
+        let original = make_snapshot();
+        let replacement = make_replacement_snapshot();
+        upsert_setting(&connection, PLUGIN_DIRECTORY_SETTING_KEY, "C:/Whybrary/plugins")
+            .expect("save plugin directory");
+
+        save_snapshot_to_connection(&mut connection, &original).expect("save original snapshot");
+        save_snapshot_to_connection(&mut connection, &replacement).expect("save replacement snapshot");
+
+        assert_eq!(
+            load_setting(&connection, PLUGIN_DIRECTORY_SETTING_KEY).expect("load plugin directory"),
+            Some("C:/Whybrary/plugins".to_string())
+        );
     }
 
     #[test]
@@ -3208,6 +3377,138 @@ mod tests {
 
         let _ = fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn plugin_settings_round_trip_and_are_isolated_per_plugin() {
+        let connection = open_test_connection();
+
+        save_plugin_setting(&connection, "alpha-plugin", "theme", &serde_json::json!("dark"))
+            .expect("save alpha theme");
+        save_plugin_setting(&connection, "alpha-plugin", "count", &serde_json::json!(3))
+            .expect("save alpha count");
+        save_plugin_setting(&connection, "beta-plugin", "theme", &serde_json::json!("light"))
+            .expect("save beta theme");
+
+        let alpha = load_plugin_settings(&connection, "alpha-plugin").expect("load alpha");
+        assert_eq!(alpha.get("theme"), Some(&serde_json::json!("dark")));
+        assert_eq!(alpha.get("count"), Some(&serde_json::json!(3)));
+        assert_eq!(alpha.len(), 2);
+
+        let beta = load_plugin_settings(&connection, "beta-plugin").expect("load beta");
+        assert_eq!(beta.get("theme"), Some(&serde_json::json!("light")));
+        assert_eq!(beta.len(), 1, "plugin settings must be isolated per plugin id");
+    }
+
+    #[test]
+    fn plugin_settings_rejects_invalid_keys_and_oversized_values() {
+        let connection = open_test_connection();
+
+        let error = save_plugin_setting(&connection, "alpha-plugin", "../escape", &serde_json::json!(1))
+            .expect_err("reject unsafe key");
+        assert!(error.contains("invalid"), "unexpected error: {error}");
+
+        let error = save_plugin_setting(
+            &connection,
+            "alpha-plugin",
+            &"x".repeat(MAX_PLUGIN_SETTING_KEY_LENGTH + 1),
+            &serde_json::json!(1),
+        )
+        .expect_err("reject overlong key");
+        assert!(error.contains("invalid"), "unexpected error: {error}");
+
+        let huge = "y".repeat(MAX_PLUGIN_SETTING_VALUE_BYTES + 1);
+        let error = save_plugin_setting(&connection, "alpha-plugin", "big", &serde_json::json!(huge))
+            .expect_err("reject oversized value");
+        assert!(error.contains("limit"), "unexpected error: {error}");
+
+        assert!(load_plugin_settings(&connection, "alpha-plugin")
+            .expect("load")
+            .is_empty());
+    }
+
+    #[test]
+    fn uninstall_removes_persisted_plugin_settings() {
+        let root = unique_temp_dir("uninstall-settings");
+        let plugin_dir = root.join("plugins");
+        let source = write_plugin_source(&root, "source", "cleanup-plugin", "1.0.0", "index.js");
+
+        let connection = open_test_connection();
+        install_plugin_core(&source, &plugin_dir, &connection).expect("install");
+        save_plugin_setting(&connection, "cleanup-plugin", "theme", &serde_json::json!("dark"))
+            .expect("save setting");
+
+        uninstall_plugin_core("cleanup-plugin", &plugin_dir, &connection).expect("uninstall");
+        assert!(
+            load_plugin_settings(&connection, "cleanup-plugin")
+                .expect("load settings")
+                .is_empty(),
+            "uninstall must remove persisted plugin settings"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn fresh_db_creates_plugin_settings_table() {
+        let connection = open_test_connection();
+        assert_eq!(
+            load_schema_version(&connection).expect("schema version"),
+            LATEST_SCHEMA_VERSION
+        );
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'plugin_settings'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query table");
+        assert_eq!(count, 1, "plugin_settings table missing");
+    }
+
+    #[test]
+    fn migrates_v4_schema_to_v5_creating_plugin_settings_table() {
+        let connection = open_test_connection();
+        connection
+            .execute_batch("DROP TABLE plugin_settings;")
+            .expect("drop plugin_settings");
+        set_schema_version(&connection, 4).expect("set v4 schema version");
+
+        migrate_to_v5(&connection).expect("migrate v4 -> v5");
+        assert_eq!(
+            load_schema_version(&connection).expect("schema version"),
+            5,
+            "expected v5 after migration"
+        );
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'plugin_settings'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query table");
+        assert_eq!(count, 1, "plugin_settings table missing after v4 -> v5");
+    }
+
+    #[test]
+    fn plugin_settings_survive_plugin_reinstall() {
+        let root = unique_temp_dir("reinstall-settings");
+        let plugin_dir = root.join("plugins");
+        let source = write_plugin_source(&root, "source", "persist-plugin", "1.0.0", "index.js");
+
+        let connection = open_test_connection();
+        install_plugin_core(&source, &plugin_dir, &connection).expect("install");
+        save_plugin_setting(&connection, "persist-plugin", "theme", &serde_json::json!("dark"))
+            .expect("save setting");
+
+        // Reinstall replaces the target directory but must not touch settings.
+        install_plugin_core(&source, &plugin_dir, &connection).expect("reinstall");
+        let settings = load_plugin_settings(&connection, "persist-plugin").expect("load");
+        assert_eq!(settings.get("theme"), Some(&serde_json::json!("dark")));
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -3292,7 +3593,10 @@ pub fn run() {
             uninstall_plugin,
             set_plugin_state,
             list_installed_plugins,
-            load_plugin_bundle
+            load_plugin_bundle,
+            list_plugin_settings,
+            set_plugin_setting,
+            delete_plugin_settings
         ])
         .run(context)
         .expect("error while running Whybrary");

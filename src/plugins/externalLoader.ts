@@ -99,8 +99,18 @@ export class ExternalPluginLoader {
         }
         const remove = this.registry.add(plugin, 'local');
         this.removers.set(plugin.id, remove);
+        await this.registry.preloadSettings(plugin.id);
         this.registry.enable(plugin.id, context, state.approvedPermissions as PluginPermission[]);
-        this.updateStatus(plugin.id, { status: 'active' }, onStatus);
+        const runtime = this.registry.listRuntime().find((entry) => entry.id === plugin.id);
+        if (runtime?.status === 'failed') {
+          this.updateStatus(
+            plugin.id,
+            { status: 'failed', error: runtime.error ?? 'Plugin activation failed.' },
+            onStatus,
+          );
+        } else {
+          this.updateStatus(plugin.id, { status: 'active' }, onStatus);
+        }
       } catch (error) {
         if (generation !== this.syncGeneration) return;
         this.updateStatus(

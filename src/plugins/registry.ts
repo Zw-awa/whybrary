@@ -5,8 +5,12 @@ import type {
   PluginRuntimeInfo,
   PluginRuntimeStatus,
   PluginSettings,
+  PluginSettingsStore,
   WhybraryPlugin,
 } from './types';
+import { createInMemoryPluginSettingsStore } from './settingsStore';
+
+const PLUGIN_SETTING_KEY_PATTERN = /^[a-zA-Z0-9._-]{1,80}$/;
 
 type PluginRecord = {
   plugin: WhybraryPlugin;
@@ -20,7 +24,23 @@ export class PluginRegistry {
   private readonly records = new Map<string, PluginRecord>();
   private readonly panels = new Map<string, { owner: string; panel: PluginPanel }>();
   private readonly commands = new Map<string, { owner: string; command: PluginCommand }>();
-  private readonly settings = new Map<string, Map<string, unknown>>();
+  private readonly settingsCache = new Map<string, Map<string, unknown>>();
+
+  constructor(
+    private readonly settingsStore: PluginSettingsStore = createInMemoryPluginSettingsStore(),
+  ) {}
+
+  /** Preloads persisted settings for one plugin into the in-memory read cache. */
+  async preloadSettings(id: string): Promise<void> {
+    if (this.settingsCache.has(id)) return;
+    const loaded = await this.settingsStore.load(id);
+    this.settingsCache.set(id, new Map(Object.entries(loaded)));
+  }
+
+  /** Drops the read cache entry so a later enable starts from persisted state. */
+  private clearSettingsCache(id: string): void {
+    this.settingsCache.delete(id);
+  }
 
   add(plugin: WhybraryPlugin, source: 'built-in' | 'local' = 'built-in'): () => void {
     if (this.records.has(plugin.id)) throw new Error(`Duplicate plugin: ${plugin.id}`);
@@ -28,6 +48,7 @@ export class PluginRegistry {
     return () => {
       this.disable(plugin.id);
       this.records.delete(plugin.id);
+      this.clearSettingsCache(plugin.id);
     };
   }
 
@@ -61,19 +82,27 @@ export class PluginRegistry {
       record.disposers.push(dispose);
       return dispose;
     };
-    const settingsStore = this.settings.get(id) ?? new Map<string, unknown>();
-    this.settings.set(id, settingsStore);
+    const cached = this.settingsCache.get(id) ?? new Map<string, unknown>();
+    if (!this.settingsCache.has(id)) this.settingsCache.set(id, cached);
     const settings: PluginSettings = {
       get: (key) => {
         if (!can('settings:read'))
           throw new Error(`Plugin ${id} is not approved for settings:read.`);
-        return settingsStore.get(key);
+        return cached.get(key);
       },
       set: (key, value) => {
         if (!can('settings:write'))
           throw new Error(`Plugin ${id} is not approved for settings:write.`);
-        if (!/^[a-zA-Z0-9._-]{1,80}$/.test(key)) throw new Error('Plugin setting key is invalid.');
-        settingsStore.set(key, value);
+        if (!PLUGIN_SETTING_KEY_PATTERN.test(key))
+          throw new Error('Plugin setting key is invalid.');
+        const hadPreviousValue = cached.has(key);
+        const previousValue = cached.get(key);
+        cached.set(key, value);
+        return this.settingsStore.set(id, key, value).catch((error) => {
+          if (hadPreviousValue) cached.set(key, previousValue);
+          else cached.delete(key);
+          throw error;
+        });
       },
     };
     try {
